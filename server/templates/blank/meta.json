@@ -1,0 +1,8 @@
+{
+  "name": "空白文章",
+  "description": "标准的 article 文档类，附带常用宏包，适合快速开始写作。",
+  "icon": "doc",
+  "main": "main.tex",
+  "color": "#1f8a4c",
+  "tags": ["article", "入门"]
+}

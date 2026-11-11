@@ -1,0 +1,8 @@
+{
+  "name": "个人简历",
+  "description": "紧凑的单页简历排版，含教育经历、项目与技能板块。",
+  "icon": "user",
+  "main": "main.tex",
+  "color": "#0e7490",
+  "tags": ["简历", "cv"]
+}

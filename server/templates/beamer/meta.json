@@ -1,0 +1,8 @@
+{
+  "name": "幻灯片 Beamer",
+  "description": "16:9 的 Beamer 演示文稿，包含标题页、目录、分栏与公式页。",
+  "icon": "slides",
+  "main": "main.tex",
+  "color": "#9333ea",
+  "tags": ["beamer", "演讲"]
+}

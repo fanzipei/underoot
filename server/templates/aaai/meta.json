@@ -1,0 +1,8 @@
+{
+  "name": "AAAI 论文",
+  "description": "AAAI-26 官方 aaai2026.sty 双栏投稿版式（含样式文件与 bst），开箱可编译。",
+  "icon": "conf",
+  "main": "main.tex",
+  "color": "#b91c1c",
+  "tags": ["AAAI", "aaai2026", "投稿"]
+}

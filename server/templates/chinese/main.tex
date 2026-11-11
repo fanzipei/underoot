@@ -1,0 +1,38 @@
+\documentclass[12pt,fontset=fandol]{ctexart}
+
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+
+\title{中文排版示例}
+\author{你的名字 \\ 某某大学}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  这是一段中文摘要示例。中文文档需要使用 \texttt{ctex} 宏集（或 \texttt{xeCJK}）并配合中文字体，
+  否则编译时会提示 “Missing character”。
+\end{abstract}
+
+\section{引言}
+
+中文段落之间的空行用于分段。行内公式同样可用：$a^2 + b^2 = c^2$。
+
+\section{公式与图表}
+
+\begin{equation}
+  f(x) = \frac{1}{\sqrt{2\pi}\sigma}\exp\left(-\frac{(x-\mu)^2}{2\sigma^2}\right).
+\end{equation}
+
+\section{结论}
+
+到这里，一份中文文档就完成了。
+
+\end{document}

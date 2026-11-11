@@ -1,0 +1,48 @@
+{
+  "name": "latexstudio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "本地部署的在线 LaTeX 协作编辑与编译平台",
+  "main": "server/index.js",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node --disable-warning=ExperimentalWarning scripts/build.mjs && node --disable-warning=ExperimentalWarning server/index.js",
+    "serve": "node --disable-warning=ExperimentalWarning server/index.js",
+    "dev": "node scripts/build.mjs --watch",
+    "test": "node scripts/smoke-test.mjs"
+  },
+  "keywords": [
+    "latex",
+    "overleaf",
+    "editor"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.20.4",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/legacy-modes": "^6.5.5",
+    "@codemirror/search": "^6.7.2",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
+    "adm-zip": "^0.6.1",
+    "archiver": "^7.0.1",
+    "bcryptjs": "^3.0.3",
+    "codemirror": "^6.0.2",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.22.3",
+    "jsonwebtoken": "^9.0.3",
+    "lib0": "^0.2.119",
+    "multer": "^2.5.0",
+    "pdfjs-dist": "^6.5.438",
+    "ws": "^8.22.1",
+    "y-codemirror.next": "^0.3.6",
+    "y-protocols": "^1.0.7",
+    "y-websocket": "^3.1.0",
+    "yjs": "^13.6.33"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

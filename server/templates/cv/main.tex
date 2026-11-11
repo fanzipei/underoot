@@ -1,0 +1,58 @@
+\documentclass[10pt]{article}
+
+\usepackage[a4paper,left=1.6cm,right=1.6cm,top=1.6cm,bottom=1.6cm]{geometry}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fontawesome5}
+\usepackage{array}
+
+\definecolor{accent}{HTML}{0E7490}
+\hypersetup{colorlinks=true, urlcolor=accent, linkcolor=accent}
+
+\titleformat{\section}{\large\bfseries\color{accent}}{}{0em}{}[\vspace{-0.6em}\rule{\textwidth}{0.6pt}]
+\titlespacing{\section}{0pt}{0.9em}{0.5em}
+\setlist[itemize]{leftmargin=1.2em,itemsep=0.15em,topsep=0.2em,parsep=0pt}
+
+\newcommand{\entry}[4]{%
+  \textbf{#1}\hfill #2\\
+  \textit{#3}\hfill #4\par\vspace{0.2em}%
+}
+
+\pagestyle{empty}
+
+\begin{document}
+
+\begin{center}
+  {\Huge\bfseries 张\ 三}\\[0.3em]
+  {\color{accent}\small \faPhone\ 138-0000-0000 \quad \faEnvelope\ zhangsan@example.com \quad \faGithub\ github.com/zhangsan \quad 北京}
+\end{center}
+
+\section{教育经历}
+\entry{某某大学}{2020.09 -- 2024.06}{计算机科学与技术，本科}{GPA 3.8/4.0}
+\begin{itemize}
+  \item 主修课程：数据结构、操作系统、机器学习、编译原理。
+  \item 获得校级一等奖学金两次。
+\end{itemize}
+
+\section{项目经历}
+\entry{在线 LaTeX 协作编辑器}{2024.03 -- 2024.09}{核心开发者}{React / Node.js}
+\begin{itemize}
+  \item 基于 WebSocket 与 CRDT 实现多人实时协同编辑，冲突率降至 0。
+  \item 设计增量编译调度，将平均编译等待时间缩短 40\%。
+\end{itemize}
+
+\entry{分布式日志采集系统}{2023.10 -- 2024.02}{后端开发}{Go / Kafka}
+\begin{itemize}
+  \item 支撑每日 2 亿条日志的采集与检索，P99 延迟低于 200ms。
+\end{itemize}
+
+\section{专业技能}
+\begin{itemize}
+  \item \textbf{编程语言：} C/C++、Python、JavaScript、Go、\LaTeX
+  \item \textbf{工具与框架：} Git、Docker、React、PyTorch
+  \item \textbf{语言：} 英语 CET-6，可流畅阅读英文技术文档
+\end{itemize}
+
+\end{document}

@@ -1,0 +1,8 @@
+{
+  "name": "ACM 论文",
+  "description": "acmart sigconf 双栏投稿版式，含图、表、公式与 ACM 参考文献格式。",
+  "icon": "conf",
+  "main": "main.tex",
+  "color": "#1d4ed8",
+  "tags": ["acmart", "ACM", "投稿"]
+}

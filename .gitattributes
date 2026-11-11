@@ -1,0 +1,10 @@
+# 统一使用 LF，避免不同系统 checkout 时整文件变更
+* text=auto eol=lf
+
+# 二进制资源
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.ico binary

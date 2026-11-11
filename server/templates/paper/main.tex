@@ -1,0 +1,86 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{cite}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+
+\title{A Study of Typesetting with \LaTeX}
+\author{First Author \and Second Author \\ Some University}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  This paper studies the typographic quality of scientific documents produced
+  with \LaTeX{}. We describe our method, report experimental results, and
+  discuss the implications for authors who prepare camera-ready manuscripts.
+
+  \textbf{Keywords:} typesetting; document preparation; scientific writing
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+Typesetting quality directly affects the readability of a paper~\cite{knuth1984tex}.
+Our contributions are:
+\begin{enumerate}
+  \item a reproducible workflow for scientific writing;
+  \item an evaluation on several document classes;
+  \item an open-source template that readers can reuse.
+\end{enumerate}
+
+\section{Related Work}
+\label{sec:related}
+
+Document preparation systems have evolved from batch-oriented tools to
+interactive editors~\cite{lamport1994latex}.
+
+\section{Method}
+\label{sec:method}
+
+Let $\mathcal{X}$ be the input space and $f_\theta$ a parameterised model.
+The objective is
+\begin{equation}
+  \mathcal{L}(\theta) = \frac{1}{N}\sum_{i=1}^{N} \ell\bigl(f_\theta(x_i), y_i\bigr) + \lambda \lVert \theta \rVert_2^2 .
+  \label{eq:objective}
+\end{equation}
+
+\begin{theorem}
+  For every $\varepsilon > 0$ there exists a constant $C$ such that the
+  estimator in Equation~\eqref{eq:objective} is consistent.
+\end{theorem}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Comparison of rendering accuracy.}
+  \label{tab:result}
+  \begin{tabular}{lcc}
+    \toprule
+    Method & Accuracy & Time \\
+    \midrule
+    Baseline & 88.2\% & 1.0$\times$ \\
+    Ours     & \textbf{91.7\%} & 1.1$\times$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:result} reports the comparison; Section~\ref{sec:method}
+describes the details.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a complete workflow for preparing scientific manuscripts.
+
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}

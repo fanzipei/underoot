@@ -1,0 +1,8 @@
+{
+  "name": "IEEE 论文",
+  "description": "IEEEtran conference 双栏投稿版式，含图、表、公式与 IEEE 参考文献格式。",
+  "icon": "conf",
+  "main": "main.tex",
+  "color": "#0f766e",
+  "tags": ["IEEEtran", "IEEE", "投稿"]
+}

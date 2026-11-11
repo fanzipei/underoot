@@ -1,0 +1,8 @@
+{
+  "name": "插图与表格",
+  "description": "图片、子图、三线表、合并单元格、宽表与长表的完整示例，中文排版。",
+  "icon": "figure",
+  "main": "main.tex",
+  "color": "#be123c",
+  "tags": ["graphicx", "booktabs", "表格"]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "中文文档",
+  "description": "使用 ctexart 与 fandol 字体的中文模板，支持中文标点与章节样式。",
+  "icon": "language",
+  "main": "main.tex",
+  "color": "#b45309",
+  "tags": ["中文", "ctex"]
+}

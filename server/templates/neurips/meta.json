@@ -1,0 +1,8 @@
+{
+  "name": "NeurIPS 论文",
+  "description": "NeurIPS 2025 官方 neurips_2025.sty 单栏双盲投稿版式，含图、表与公式示例。",
+  "icon": "conf",
+  "main": "main.tex",
+  "color": "#7c3aed",
+  "tags": ["NeurIPS", "neurips_2025", "投稿"]
+}

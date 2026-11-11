@@ -1,0 +1,33 @@
+# 依赖
+node_modules/
+
+# 运行时数据（数据库、会话密钥、管理员初始密码、用户项目文件）
+data/
+*.db
+*.db-*
+*.key
+*-password.txt
+.env
+.env.local
+.env.*.local
+
+# 编译器二进制（体积大，按需自行安装）
+bin/
+bin/tectonic.zip
+
+# 由 npm run build 生成的前端产物
+public/assets/app.js
+public/assets/app.js.map
+public/assets/pdf.worker.min.mjs
+public/assets/standard_fonts/
+public/assets/cmaps/
+
+# 日志与临时文件
+*.log
+*.tgz
+*.tmp
+.DS_Store
+Thumbs.db
+
+# 本地工作区元数据
+.workbuddy/

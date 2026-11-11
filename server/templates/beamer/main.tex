@@ -1,0 +1,64 @@
+\documentclass[11pt,aspectratio=169]{beamer}
+
+\usetheme{Madrid}
+\usecolortheme{default}
+\usepackage{amsmath}
+\usepackage{booktabs}
+
+\title{用 \LaTeX{} 做一次漂亮的汇报}
+\subtitle{Beamer 模板}
+\author{你的名字}
+\institute{某某大学}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{目录}
+  \tableofcontents
+\end{frame}
+
+\section{研究背景}
+
+\begin{frame}{问题是什么}
+  \begin{itemize}
+    \item 背景一：\alert{重点内容}用强调色标出；
+    \item 背景二：逐条展示，逻辑清晰；
+    \item 背景三：一页不要放太多文字。
+  \end{itemize}
+\end{frame}
+
+\section{方法}
+
+\begin{frame}{核心公式}
+  \begin{block}{目标函数}
+    \begin{equation}
+      \min_{\theta}\; \mathbb{E}_{(x,y)\sim\mathcal{D}}\bigl[\ell(f_\theta(x), y)\bigr]
+    \end{equation}
+  \end{block}
+
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      左栏：文字说明。
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      右栏：补充说明。
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\section{结论}
+
+\begin{frame}{总结}
+  \begin{enumerate}
+    \item 结论一；
+    \item 结论二。
+  \end{enumerate}
+  \vspace{1em}
+  \centering \Large 谢谢！
+\end{frame}
+
+\end{document}
