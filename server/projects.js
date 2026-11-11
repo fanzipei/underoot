@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
 import multer from 'multer';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { projectDir, resolveInside, isTextFile, normalizeRelPath } from './paths.js';
 import {
   db, now, memberRole, publicUser, getUserByEmail, touchProject, recordVersion, listVersions, getVersion,
@@ -536,7 +536,7 @@ projectsRouter.get('/:id/download', loadProject, (req, res) => {
   const name = `${req.project.name}.zip`;
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
-  const archive = archiver('zip', { zlib: { level: 9 } });
+  const archive = new ZipArchive({ zlib: { level: 9 } });
   archive.on('error', () => res.end());
   archive.pipe(res);
   archive.directory(dir, false, (entry) => (isGenerated(entry.name) ? false : entry));

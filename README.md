@@ -317,7 +317,7 @@ npm run test:research # 隔离测试 AI 协议、权限、版本分支、转换�
 - 同步仅覆盖修复涉及的源码、构建后的 `app.js`、测试脚本和说明；保留远端 `.env`、`data/`、编译器、Linux 依赖和已有运维文件。重启前停止服务并生成 `~/latexstudio-backup-before-codex-*.tgz` 备份。
 - 远端目录没有 `.git`，且有未被当前入口引用的旧微信登录模块；它们没有启用，也没有在此次同步中删除。旧 `deploy/README.md` 中的主机别名 `ws4090r` 与本次使用的 `ws4090l` 不一致。
 - 当前应用使用 HTTP；虽然主机 443 端口有监听，访问 `https://127.0.0.1:443/` 未能完成 TLS 请求，尚未验证可用的 HTTPS 反向代理。此次未变更主机其他服务或网络配置。
-- `npm audit` 报告 ZIP 导出依赖链的 5 项 moderate 告警，建议后续单独升级和验证（自动修复涉及 archiver 主版本升级）；本次没有升级依赖。尚未逐一验证全部会议模板、浏览器组合和公网访问路径。
+- ZIP 导出依赖链的 5 项 moderate 告警已修复：升级 `archiver` 至 8，适配 `ZipArchive` API，并通过仅限 `archiver` 的 override 使用 `readdir-glob` 4（依赖已修补的 `minimatch` 11）。原先受影响的 `glob` / `archiver-utils` 依赖已移除；`npm audit` 为 0 项漏洞。override 在上游直接支持该版本后可移除。尚未逐一验证全部会议模板、浏览器组合和公网访问路径。
 
 ## 十二、v0.2 研究工作台
 

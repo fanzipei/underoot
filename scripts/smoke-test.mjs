@@ -701,9 +701,22 @@ async function main() {
   cookie = ownerCookie;
 
   // --- ZIP 往返 ---
+  // Exercise directory traversal, UTF-8 paths, binary streaming and generated-file
+  // filtering after upgrading archiver and its readdir-glob dependency.
+  const exportBytes = Buffer.from([0, 255, 128, 80, 75, 0, 13, 10]);
+  const exportFixture = new FormData();
+  exportFixture.append('files', new Blob([exportBytes]), 'binary.png');
+  exportFixture.append('files', new Blob(['temporary log']), 'export-check.log');
+  exportFixture.append('files', new Blob(['temporary synctex']), 'export-check.synctex.gz');
+  exportFixture.append('paths', JSON.stringify(['figures/插图.png', 'export-check.log', 'export-check.synctex.gz']));
+  check('准备 ZIP 导出回归素材', (await req(`/api/projects/${pid}/upload`, { method: 'POST', body: exportFixture })).status === 200);
   const zipRes = await fetch(`${BASE}/api/projects/${pid}/download`, { headers: { cookie } });
   const zipBuf = Buffer.from(await zipRes.arrayBuffer());
   check('导出 ZIP', zipRes.status === 200 && zipBuf.subarray(0, 2).toString() === 'PK', `${zipBuf.length} B`);
+  const exportedZip = new AdmZip(zipBuf);
+  check('ZIP 保留嵌套中文路径与二进制内容', exportedZip.getEntry('figures/插图.png')?.getData().equals(exportBytes) === true);
+  check('ZIP 保留嵌套源码内容', exportedZip.getEntry('chapters/intro.tex')?.getData().toString() === '\\section{Intro}\n');
+  check('ZIP 排除编译中间产物', !exportedZip.getEntry('export-check.log') && !exportedZip.getEntry('export-check.synctex.gz'));
   const fd2 = new FormData();
   fd2.append('file', new Blob([zipBuf]), 'smoke-import.zip');
   fd2.append('name', 'smoke-import-named');

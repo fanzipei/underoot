@@ -1,6 +1,6 @@
 {
   "name": "underoot",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "可插件扩展、可本地部署的 vibe research 协作平台",
@@ -29,7 +29,7 @@
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.15",
     "adm-zip": "^0.6.1",
-    "archiver": "^7.0.1",
+    "archiver": "^8.0.0",
     "bcryptjs": "^3.0.3",
     "codemirror": "^6.0.2",
     "cookie-parser": "^1.4.7",
@@ -50,5 +50,10 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fanzipei/underoot.git"
+  },
+  "overrides": {
+    "archiver": {
+      "readdir-glob": "^4.0.0"
+    }
   }
 }
