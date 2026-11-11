@@ -1,5 +1,5 @@
 /* =========================================================
-   LaTeXStudio — 设计系统
+   underoot — 设计系统
    ========================================================= */
 :root {
   --bg: #f5f7f9;
@@ -588,6 +588,10 @@ textarea.input { height: auto; padding: 10px 12px; resize: vertical; }
 
 .ed-crowd { display: flex; align-items: center; }
 .ed-crowd .avatar { margin-left: -7px; }
+.ed-engine { display: flex; align-items: center; gap: 6px; flex: none; font-size: 12px; color: var(--text-2); }
+.ed-engine select { max-width: 190px; height: 30px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; }
+.ed-engine select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.ed-engine select:disabled { opacity: .6; cursor: wait; }
 
 .ed-main { flex: 1; display: flex; min-height: 0; position: relative; }
 
@@ -1001,12 +1005,87 @@ textarea.input { height: auto; padding: 10px 12px; resize: vertical; }
   background: var(--danger); border: 1.5px solid var(--surface);
 }
 
+/* Research workspace */
+.research-check { display:flex;align-items:center;gap:7px;margin:9px 0;font-size:12px;color:var(--text-2); }
+.research-check input { accent-color:var(--primary); }
+.research-search { display:flex;gap:8px;margin:10px 0; }
+.research-search .input { min-width:0;flex:1; }
+.research-search select { max-width:160px; }
+.workspace-results { max-height:58vh;overflow:auto;min-height:80px; }
+.workspace-result { display:block;width:100%;text-align:left;border:1px solid var(--border);border-radius:8px;padding:12px;background:#fff;margin:8px 0;cursor:pointer; }
+.workspace-result:hover,.workspace-result.unread { background:var(--primary-soft);border-color:var(--primary-line); }
+.workspace-result b,.workspace-result span { display:block;font-size:12px; }
+.workspace-result span { color:var(--muted);margin-top:4px; }
+.workspace-result pre { margin:8px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 var(--font-mono,monospace); }
+.assistant-panel { display:none;flex:none;width:360px;min-width:280px;min-height:0;border-left:1px solid var(--border);background:#f8faf9;flex-direction:column; }
+.assistant-panel.open { display:flex; }
+.assistant-controls { padding:12px;border-bottom:1px solid var(--border);background:#fff; }
+.assistant-controls .input { font-size:12px; }
+.assistant-buttons { display:flex;flex-wrap:wrap;gap:6px;margin-top:8px; }
+.assistant-list { flex:1;min-height:0;overflow:auto;padding:10px; }
+.assistant-card { border:1px solid var(--border);border-radius:9px;background:#fff;padding:12px;margin-bottom:10px; }
+.assistant-card p { white-space:pre-wrap;font-size:12px;line-height:1.7;color:var(--text-2); }
+.assistant-card pre { padding:7px;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.6 monospace;max-height:200px;overflow:auto; }
+.assistant-card a { display:block;font-size:12px;overflow-wrap:anywhere; }
+.assistant-card details { font-size:12px;margin:10px 0; }
+.assistant-location { padding:0;border:0;background:none;text-align:left;cursor:pointer;width:100%; }
+.assistant-location b { display:block;font-size:13px;line-height:1.5; }
+.assistant-location span { display:block;font-size:11px;color:var(--muted);margin-top:6px; }
+.assistant-region { font-size:12px;color:var(--primary);margin-bottom:0; }
+.assistant-highlight { position:absolute;background:rgba(64,120,230,.16);border:2px solid #4078e6;pointer-events:none;z-index:8; }
+.diff-removed { background:#fff0ef;color:#943c35; }
+.diff-added { background:#eaf7ed;color:#28643b; }
+.revision-toolbar { display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px; }
+.revision-toolbar select { width:auto;max-width:230px; }
+.revision-browser { display:grid;grid-template-columns:minmax(210px,42%) minmax(0,1fr);gap:16px;height:55vh; }
+.revision-timeline { display:flex;overflow:auto;border:1px solid var(--border);border-radius:8px;position:relative;align-items:flex-start; }
+.revision-timeline svg { flex:none; }
+.revision-rows { flex:1;min-width:130px; }
+.revision-row { display:flex;flex-direction:column;justify-content:center;gap:3px;width:100%;height:66px;background:#fff;border:0;border-bottom:1px solid var(--border);padding:6px 8px;cursor:pointer;text-align:left; }
+.revision-row b { font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px; }
+.revision-row span { font-size:10px;color:var(--muted); }
+.revision-row.active { background:var(--primary-soft);box-shadow:inset 3px 0 var(--primary); }
+.revision-preview { overflow:auto;min-width:0; }
+.revision-file { display:block;width:100%;border:1px solid var(--border);background:#fff;border-radius:6px;padding:8px;text-align:left;font-size:12px;cursor:pointer;margin:5px 0;overflow-wrap:anywhere; }
+.revision-file span { display:block;color:var(--muted);font-size:10px; }
+.revision-diff { font:11px/1.6 monospace;border:1px solid var(--border);padding:5px;overflow:auto; }
+.revision-diff span { display:block;white-space:pre-wrap;overflow-wrap:anywhere; }
+.discussion-assignment { display:flex;gap:6px;margin:8px 0; }
+.discussion-assignment .input { min-width:0;font-size:11px;flex:1;padding:5px; }
+.discussion-search { padding:4px 10px 10px; }
+.discussion-search .input { font-size:12px; }
+.comments-filters { flex-wrap:wrap; }
+.priority-high { color:#9c3c2c;background:#fff0e9; }
+.member-role { max-width:100px;font-size:12px;padding:5px; }
+.extension-card { border:1px solid var(--border);border-radius:8px;padding:13px;margin:10px 0;background:#fff; }
+.extension-card p,.extension-card details { font-size:12px;line-height:1.7;color:var(--text-2); }
+.extension-install { border:1px dashed var(--primary-line);border-radius:8px;padding:12px;background:var(--primary-soft); }
+.extension-install > .input { margin:8px 0; }
+.extension-window { position:fixed;right:22px;top:84px;width:min(530px,92vw);height:min(560px,80vh);min-width:300px;min-height:220px;display:flex;flex-direction:column;z-index:70;resize:both;overflow:hidden;border:1px solid #bfd0c5;border-radius:10px;background:#fff;box-shadow:0 15px 50px #122c2938; }
+.extension-window-head { display:flex;align-items:center;gap:8px;padding:8px 10px;background:#eef6f0;border-bottom:1px solid var(--border);cursor:move;flex:none;font-size:13px; }
+.extension-window-meta { padding:5px 10px;font-size:10px;color:var(--muted);flex:none; }
+.extension-window-meta details { display:inline-block;margin-left:8px; }
+.extension-window iframe { border:0;width:100%;flex:1;min-height:0;background:#fff; }
+.merge-conflict { display:flex;gap:8px;margin:8px 0;align-items:center; }
+.merge-conflict select { min-width:0;flex:1; }
+.ed-topbar .ed-title input { max-width:25vw; }
+.ed-main:has(.assistant-panel.open) .side { width:180px; }
+.ed-main:has(.assistant-panel.open) .pane-pdf { width:calc((100% - 540px) * .5) !important;min-width:230px; }
+@media (min-width:761px) and (max-width:1100px) { .ed-main:has(.assistant-panel.open) .side { display:none; } .ed-main:has(.assistant-panel.open) .pane-pdf { width:calc((100% - 360px) * .5) !important; } }
+@media (max-width:1000px) { .ed-topbar .ed-save,.ed-topbar .ed-crowd { display:none; } .ed-topbar { gap:6px; } .ed-topbar .ed-title { flex:1; } .ed-topbar .ed-title input { width:100%;max-width:100%; } }
+@media (max-width:760px) { .assistant-panel.open { position:absolute;right:0;top:0;bottom:0;width:min(390px,100vw);z-index:35;box-shadow:-5px 0 24px #172d2420; } .revision-browser { grid-template-columns:minmax(150px,42%) minmax(0,1fr);gap:8px; } .revision-toolbar .btn { font-size:11px; } .topbar #btn-import { display:none; } .ed-topbar #btn-share,.ed-topbar #btn-pdf-toggle { display:none; } .ed-engine select { max-width:108px; } }
+
 /* 响应式 */
 @media (max-width: 1000px) {
   .side { width: 200px; }
   .pane-pdf { width: 42%; }
 }
 @media (max-width: 760px) {
+  .ed-topbar { gap: 5px; padding: 0 6px; }
+  .ed-topbar .ed-save, .ed-topbar .ed-crowd, .ed-engine > span { display: none; }
+  .ed-title { flex: 1; }
+  .ed-title input { width: 100%; max-width: 100%; min-width: 0; }
+  .ed-engine select { max-width: 130px; }
   .side { display: none; }
   .pane-pdf { display: none; }
   .topbar .search { display: none; }

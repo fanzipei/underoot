@@ -1,0 +1,11 @@
+{
+  "id": "underoot.publishing", "name": "学术传播与投稿", "version": "0.2.0", "apiVersion": 1,
+  "runtime": "builtin", "entry": "activate.mjs", "author": "underoot", "license": "MIT",
+  "description": "从论文生成 Slides / Poster，并在保留旧稿的分支中迁移投稿模板。",
+  "permissions": ["project.read", "ai.invoke"],
+  "contributes": { "commands": [
+    { "id": "underoot.publishing.slides", "title": "生成 LaTeX Slides", "when": "editor", "handler": "publishing.slides" },
+    { "id": "underoot.publishing.poster", "title": "生成学术 Poster", "when": "editor", "handler": "publishing.poster" },
+    { "id": "underoot.publishing.template", "title": "转投 · 换模板（保留旧稿）", "when": "editor", "handler": "publishing.template" }
+  ] }
+}

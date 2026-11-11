@@ -12,9 +12,11 @@ import {
 import { requireAuth } from './auth.js';
 import { getTemplate } from './templates.js';
 import { compileProject, parseLog, hashProject, detectEngines, pickEngine, engineLabel } from './compile.js';
-import { syncExternalWrite, closeProjectDocs, flushProject, broadcastProject, revokeProjectAccess } from './collab.js';
+import { syncExternalWrite, closeProjectDocs, closeFileDocs, flushProject, broadcastProject, revokeProjectAccess } from './collab.js';
 import { unpackZipTo, parseGithubInput, downloadGithubZip } from './import.js';
 import { detectClashes, buildFixedMain, buildFixedBoldGreek, detectBoldGreek } from './latex-fixes.js';
+import { notifyDiscussion, updateDiscussion } from './discussions.js';
+import { snapshot } from './project-history.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024, files: 60 } });
 
@@ -116,6 +118,7 @@ function createProject({ ownerId, name, templateId, skipTemplate = false, source
   for (const v of initialVersions) {
     recordVersion({ projectId: id, path: v.path, content: v.content, authorId: ownerId });
   }
+  if (!skipTemplate) snapshot(id, ownerId, '项目创建', 'initial');
   return db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
 }
 
@@ -231,6 +234,7 @@ function createProjectFromZip({ ownerId, name, buffer, source }) {
     } catch { /* 版本快照失败不影响导入 */ }
   }
   const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(project.id);
+  snapshot(project.id, ownerId, '导入项目', 'initial');
   const notes = [];
   if (unpacked.skipped) notes.push(`已跳过 ${unpacked.skipped} 个不安全或无法解压的文件`);
   if (clashInfo.warning) notes.push(clashInfo.warning);
@@ -255,6 +259,8 @@ function projectJson(row, role) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     engine: row.engine || 'auto',
+    epoch: row.collab_epoch || 0,
+    activeBranch: row.active_branch || null,
   };
 }
 
@@ -266,6 +272,10 @@ function loadProject(req, res, next) {
   if (!row) return res.status(404).json({ error: '项目不存在' });
   const role = memberRole(row.id, req.user.id);
   if (!role) return res.status(403).json({ error: '无权访问该项目' });
+  if (!['GET', 'HEAD'].includes(req.method) && !['owner', 'editor'].includes(role)) {
+    const isDiscussion = /\/comments(?:\/|$)/.test(req.path);
+    if (role !== 'reviewer' || !isDiscussion) return res.status(403).json({ error: role === 'viewer' ? '此项目为只读权限' : '审阅者可以评论，不能修改项目内容' });
+  }
   req.project = row;
   req.role = role;
   next();
@@ -326,6 +336,9 @@ projectsRouter.patch('/:id', loadProject, (req, res) => {
   }
   touchProject(req.project.id);
   const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.project.id);
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'engine')) {
+    broadcastProject(req.project.id, { type: 'project:engine', engine: row.engine || 'auto' });
+  }
   res.json({ project: projectJson(row, req.role) });
 });
 
@@ -348,12 +361,13 @@ projectsRouter.post('/:id/duplicate', loadProject, (req, res) => {
   const dest = projectDir(copy.id);
   fs.rmSync(dest, { recursive: true, force: true });
   copyDir(src, dest);
-  db.prepare('UPDATE projects SET main_file = ? WHERE id = ?').run(req.project.main_file, copy.id);
-  res.json({ project: projectJson({ ...copy, main_file: req.project.main_file }, 'owner') });
+  db.prepare('UPDATE projects SET main_file = ?, engine=? WHERE id = ?').run(req.project.main_file, req.project.engine, copy.id);
+  snapshot(copy.id, req.user.id, '复制项目', 'initial');
+  res.json({ project: projectJson({ ...copy, main_file: req.project.main_file, engine: req.project.engine }, 'owner') });
 });
 
 projectsRouter.get('/:id/tree', loadProject, (req, res) => {
-  res.json({ tree: buildTree(projectDir(req.project.id)) });
+  res.json({ tree: buildTree(projectDir(req.project.id)), mainFile: req.project.main_file });
 });
 
 /* ---------------- 文件读写 ---------------- */
@@ -410,12 +424,15 @@ projectsRouter.delete('/:id/file', loadProject, (req, res) => {
   const rel = normalizeRelPath(req.query.path);
   const full = resolveInside(projectDir(req.project.id), rel);
   if (!fs.existsSync(full)) return res.status(404).json({ error: '文件不存在' });
+  snapshot(req.project.id, req.user.id, `删除前：${rel}`, 'files');
+  closeFileDocs(req.project.id, rel);
   fs.rmSync(full, { recursive: true, force: true });
   if (req.project.main_file === rel || req.project.main_file.startsWith(rel + '/')) {
     const fallback = buildTree(projectDir(req.project.id)).some((n) => n.name === 'main.tex') ? 'main.tex' : req.project.main_file;
     db.prepare('UPDATE projects SET main_file = ? WHERE id = ?').run(fallback, req.project.id);
   }
   touchProject(req.project.id);
+  broadcastProject(req.project.id, { type: 'file:deleted', path: rel });
   res.json({ ok: true });
 });
 
@@ -427,7 +444,10 @@ projectsRouter.post('/:id/rename', loadProject, (req, res) => {
   const dest = resolveInside(dir, to);
   if (!fs.existsSync(src)) return res.status(404).json({ error: '源文件不存在' });
   if (fs.existsSync(dest)) return res.status(409).json({ error: '目标已存在' });
+  if (to.startsWith(from + '/')) return res.status(400).json({ error: '不能移动到自身子目录' });
+  snapshot(req.project.id, req.user.id, `重命名前：${from}`, 'files');
   fs.mkdirSync(path.dirname(dest), { recursive: true });
+  closeFileDocs(req.project.id, from);
   fs.renameSync(src, dest);
   if (req.project.main_file === from) {
     db.prepare('UPDATE projects SET main_file = ? WHERE id = ?').run(to, req.project.id);
@@ -435,6 +455,7 @@ projectsRouter.post('/:id/rename', loadProject, (req, res) => {
     db.prepare('UPDATE projects SET main_file = ? WHERE id = ?').run(req.project.main_file.replace(from, to), req.project.id);
   }
   touchProject(req.project.id);
+  broadcastProject(req.project.id, { type: 'file:renamed', from, to });
   res.json({ ok: true, path: to });
 });
 
@@ -554,7 +575,7 @@ projectsRouter.post('/:id/compile', loadProject, async (req, res) => {
   const hash = hashProject(dir);
   const hit = compileCache.get(req.project.id);
   // 缓存必须绑定引擎：换 pdfLaTeX / Tectonic 不能复用上一引擎的 PDF
-  const stillFresh = hit && hit.hash === hash && hit.engine === engineKey && Date.now() - hit.at < 10 * 60 * 1000;
+  const stillFresh = hit && hit.epoch === req.project.collab_epoch && hit.hash === hash && hit.mainFile === mainFile && hit.engine === engineKey && Date.now() - hit.at < 10 * 60 * 1000;
   let result;
 
   if (!force && stillFresh) {
@@ -565,7 +586,7 @@ projectsRouter.post('/:id/compile', loadProject, async (req, res) => {
     result = resultToJson(raw, req.project.id);
     result.by = req.user.name;
     result.engineLabel = raw.engine ? engineLabel(raw.engine) : null;
-    compileCache.set(req.project.id, { hash, engine: engineKey, at: Date.now(), result });
+    compileCache.set(req.project.id, { hash, mainFile, engine: engineKey, epoch: req.project.collab_epoch, at: Date.now(), result });
     try {
       db.prepare('INSERT INTO compiles (id,project_id,user_id,ok,ms,engine,log,created_at) VALUES (?,?,?,?,?,?,?,?)')
         .run(crypto.randomUUID(), req.project.id, req.user.id, raw.ok ? 1 : 0,
@@ -643,6 +664,7 @@ projectsRouter.post('/:id/comments', loadProject, (req, res) => {
     return res.status(400).json({ error: '评论锚点不合法' });
   }
   const comment = createComment({ projectId: req.project.id, authorId: req.user.id, body: text, ...anchor });
+  notifyDiscussion(req.project.id, comment.id, req.user.id, text);
   touchProject(req.project.id);
   broadcastComment(req.project.id, 'created', comment);
   res.status(201).json({ comment });
@@ -651,21 +673,21 @@ projectsRouter.post('/:id/comments', loadProject, (req, res) => {
 projectsRouter.post('/:id/comments/:cid/replies', loadProject, (req, res) => {
   const { text, error } = commentBody(req.body?.body, REPLY_MAX);
   if (error) return res.status(400).json({ error });
+  const replyTo = req.body?.replyTo || null;
+  if (replyTo && !db.prepare('SELECT id FROM comment_replies WHERE id=? AND comment_id=?').get(replyTo, req.params.cid)) return res.status(400).json({ error: '引用的回复不属于此评论' });
   const comment = addReply({
     projectId: req.project.id, commentId: req.params.cid, authorId: req.user.id, body: text,
+    replyTo,
   });
   if (!comment) return res.status(404).json({ error: '评论不存在' });
+  notifyDiscussion(req.project.id, comment.id, req.user.id, text);
   touchProject(req.project.id);
   broadcastComment(req.project.id, 'replied', comment);
   res.status(201).json({ comment });
 });
 
 projectsRouter.patch('/:id/comments/:cid', loadProject, (req, res) => {
-  if (typeof req.body?.resolved !== 'boolean') {
-    return res.status(400).json({ error: '参数 resolved 必须是布尔值' });
-  }
-  const comment = setCommentResolved(req.project.id, req.params.cid, req.body.resolved);
-  if (!comment) return res.status(404).json({ error: '评论不存在' });
+  const comment = updateDiscussion(req.project.id, req.params.cid, req.body || {}, req.user, req.role);
   touchProject(req.project.id);
   broadcastComment(req.project.id, comment.resolved ? 'resolved' : 'reopened', comment);
   res.json({ comment });
@@ -826,9 +848,23 @@ projectsRouter.post('/:id/members', loadProject, (req, res) => {
   const user = getUserByEmail(email);
   if (!user) return res.status(404).json({ error: '该邮箱尚未注册' });
   if (memberRole(req.project.id, user.id)) return res.status(409).json({ error: '该用户已在项目中' });
+  const role = req.body?.role || 'editor';
+  if (!['editor', 'reviewer', 'viewer'].includes(role)) return res.status(400).json({ error: '成员角色不合法' });
   db.prepare('INSERT INTO members (project_id,user_id,role,created_at) VALUES (?,?,?,?)')
-    .run(req.project.id, user.id, 'editor', now());
-  res.json({ ok: true, member: { ...publicUser(user), role: 'editor' } });
+    .run(req.project.id, user.id, role, now());
+  broadcastProject(req.project.id, { type: 'members:changed' });
+  res.json({ ok: true, member: { ...publicUser(user), role } });
+});
+
+projectsRouter.patch('/:id/members/:userId', loadProject, (req, res) => {
+  if (req.role !== 'owner') return res.status(403).json({ error: '只有所有者可以修改成员角色' });
+  if (req.params.userId === req.project.owner_id) return res.status(400).json({ error: '不能修改所有者角色' });
+  if (!['editor', 'reviewer', 'viewer'].includes(req.body?.role)) return res.status(400).json({ error: '成员角色不合法' });
+  if (!memberRole(req.project.id, req.params.userId)) return res.status(404).json({ error: '成员不存在' });
+  db.prepare('UPDATE members SET role=? WHERE project_id=? AND user_id=?').run(req.body.role, req.project.id, req.params.userId);
+  broadcastProject(req.project.id, { type: 'members:changed' });
+  revokeProjectAccess(req.project.id, req.params.userId);
+  res.json({ ok: true });
 });
 
 projectsRouter.delete('/:id/members/:userId', loadProject, (req, res) => {

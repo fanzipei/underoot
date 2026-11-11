@@ -86,7 +86,8 @@ export function detectEngines() {
  */
 export function pickEngine(preferred) {
   const { engines } = detectEngines();
-  const forced = String(preferred || '').trim() || (process.env.LATEX_ENGINE || '').trim();
+  const preference = String(preferred || '').trim();
+  const forced = preference && preference !== 'auto' ? preference : (process.env.LATEX_ENGINE || '').trim();
   if (forced && forced !== 'auto') {
     return engines.find((e) => e.id === forced) || null;
   }
@@ -154,7 +155,13 @@ export function parseLog(log) {
     let m = line.match(/^(?:\.\/)?([^\s:()]+\.(?:tex|sty|cls|bib|ltx)):(\d+):\s*(.+)$/);
     if (m && !/^Underfull|^Overfull/.test(m[3])) {
       const isWarn = /^(LaTeX|Package|Class)\s+\w*\s*Warning/i.test(m[3]) || /^Warning/i.test(m[3]);
-      pushUnique(isWarn ? warnings : errors, { file: m[1], line: Number(m[2]), message: m[3].trim(), type: isWarn ? 'warning' : 'error' });
+      const message = m[3].trim();
+      const detail = lines.slice(i + 1, i + 3).join(' ').trim();
+      const diagnosis = isWarn ? null : diagnoseOptionClash(message) || diagnoseImproperAlpha(message, detail);
+      pushUnique(isWarn ? warnings : errors, {
+        file: m[1], line: Number(m[2]), message, type: isWarn ? 'warning' : 'error',
+        ...(diagnosis || {}),
+      });
       continue;
     }
     // ! message  （后面常有 l.NN）
@@ -181,9 +188,10 @@ export function parseLog(log) {
 }
 
 const locks = new Map();
+export const isCompiling = (projectId) => locks.has(projectId);
 
 /** 根据项目源文件内容生成指纹，用于多人协作时复用编译结果 */
-const SKIP_HASH = new Set(['.aux', '.log', '.out', '.toc', '.fls', '.fdb_latexmk', '.nav', '.snm', '.vrb', '.bcf', '.blg', '.synctex', '.pdf', '.xdv', '.dvi', '.bbl']);
+const SKIP_HASH = new Set(['.aux', '.log', '.out', '.toc', '.fls', '.fdb_latexmk', '.nav', '.snm', '.vrb', '.bcf', '.blg', '.synctex', '.pdf', '.xdv', '.dvi', '.bbl', '.lof', '.lot', '.idx', '.ind', '.ilg', '.glo', '.gls', '.spl', '.loa', '.acn', '.acr']);
 
 export function hashProject(dir) {
   const hash = crypto.createHash('sha256');
@@ -197,7 +205,7 @@ export function hashProject(dir) {
       if (entry.isDirectory()) walk(path.join(cur, entry.name), r);
       else {
         const ext = path.extname(entry.name).toLowerCase();
-        if (SKIP_HASH.has(ext) || entry.name.endsWith('.run.xml')) continue;
+        if (SKIP_HASH.has(ext) || entry.name.endsWith('.run.xml') || entry.name.endsWith('.synctex.gz')) continue;
         files.push({ rel: r, full: path.join(cur, entry.name) });
       }
     }

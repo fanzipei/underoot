@@ -23,7 +23,7 @@ export function renderForcePassword(root, { user, onDone, onLogout }) {
           </div>
           <div class="field">
             <label for="fp-next">新密码</label>
-            <input class="input" id="fp-next" type="password" placeholder="至少 6 位" autocomplete="new-password" required />
+            <input class="input" id="fp-next" type="password" placeholder="8–64 位，至少 3 个不同字符" autocomplete="new-password" required />
           </div>
           <div class="field">
             <label for="fp-confirm">确认新密码</label>

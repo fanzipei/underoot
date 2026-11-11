@@ -1,0 +1,7 @@
+{
+  "id": "community.ai-claims", "name": "论证强度审阅", "version": "1.0.0", "apiVersion": 1,
+  "entry": "index.html", "runtime": "iframe", "author": "underoot example", "license": "MIT",
+  "description": "通过宿主模型检查当前源码选区的过度推断、证据边界和缺失论据，并提交待作者审阅的建议。",
+  "permissions": ["selection.read", "ai.invoke", "suggestions.propose"],
+  "contributes": { "commands": [{ "id": "community.ai-claims.review", "title": "AI 插件：审阅选区论证", "when": "editor" }] }
+}

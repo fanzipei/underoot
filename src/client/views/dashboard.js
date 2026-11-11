@@ -1,4 +1,6 @@
 import { api } from '../api.js';
+import { openWorkspaceSearch, openNotifications, openAiSettings } from './research-tools.js';
+import { loadExtensions, enabledExtension, extensionCommands, openExtensionsManager, closeExtensionWindows } from '../extensions.js';
 import {
   icon, escapeHtml, avatarHtml, timeAgo, toast, modal, confirmDialog, promptDialog, dropdown,
 } from '../ui.js';
@@ -18,12 +20,17 @@ export function renderDashboard(root, { user, onLogout, onOpenProject, onOpenAdm
   let query = '';
   let templates = [];
   let pendingCount = 0;
+  let extensionList = [];
 
   root.innerHTML = `
     <div class="topbar">
-      <div class="brand"><span class="mark">T</span><span class="full">LaTeXStudio</span></div>
+      <div class="brand"><span class="mark" aria-label="underoot"><svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 17l4-2 5 10 6-18h8" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" /></svg></span><span class="full">underoot</span></div>
       <div class="search">${icon('grid')}<input id="search" placeholder="搜索项目名称…" /></div>
       <div class="spacer"></div>
+      <button class="btn" id="btn-workspace-search">全文搜索</button>
+      <button class="btn" id="btn-notifications">讨论通知</button>
+      <button class="btn" id="btn-extensions">插件</button>
+      <button class="btn" id="btn-extension-tools">工具箱</button>
       <button class="btn" id="btn-import">${icon('archive')}导入项目</button>
       <button class="btn btn-primary" id="btn-new">${icon('plus')}新建项目</button>
       <div class="user-chip" id="user-chip">${avatarHtml(user)}</div>
@@ -119,6 +126,8 @@ export function renderDashboard(root, { user, onLogout, onOpenProject, onOpenAdm
       const [p, t] = await Promise.all([api.get('/api/projects'), api.get('/api/templates')]);
       projects = p.projects;
       templates = t.templates;
+      extensionList = await loadExtensions();
+      root.querySelector('#btn-workspace-search').hidden = !enabledExtension(extensionList, 'underoot.discovery');
       render();
     } catch (err) {
       listEl.innerHTML = `<div class="empty-state">加载失败：${escapeHtml(err.message)}</div>`;
@@ -362,7 +371,7 @@ export function renderDashboard(root, { user, onLogout, onOpenProject, onOpenAdm
         </div>
         <div class="field"><label>修改密码</label>
           <input class="input" id="set-pass-old" type="password" placeholder="当前密码" style="margin-bottom:8px" />
-          <input class="input" id="set-pass-new" type="password" placeholder="新密码（至少 6 位）" />
+          <input class="input" id="set-pass-new" type="password" placeholder="新密码（8–64 位，至少 3 个不同字符）" />
         </div>`,
       footerHtml: `<button class="btn" data-act="cancel">取消</button>
                    <button class="btn btn-primary" data-act="save">保存</button>`,
@@ -457,6 +466,15 @@ export function renderDashboard(root, { user, onLogout, onOpenProject, onOpenAdm
 
   /* 事件绑定 */
   root.querySelector('#btn-new').onclick = () => openTemplates();
+  root.querySelector('#btn-workspace-search').onclick = openWorkspaceSearch;
+  root.querySelector('#btn-notifications').onclick = openNotifications;
+  root.querySelector('#btn-extensions').onclick = () => openExtensionsManager(user);
+  root.querySelector('#btn-extension-tools').onclick = async (event) => {
+    const anchor = event.currentTarget;
+    extensionList = await loadExtensions();
+    const items = extensionCommands(extensionList, { 'discovery.search': openWorkspaceSearch });
+    dropdown(anchor, items.length ? items : [{ key: 'manage', label: '安装或启用插件', onClick: () => openExtensionsManager(user) }]);
+  };
   root.querySelector('#search').addEventListener('input', (e) => { query = e.target.value.trim(); render(); });
 
   root.querySelector('#btn-import').onclick = () => openTemplates('zip');
@@ -472,6 +490,7 @@ export function renderDashboard(root, { user, onLogout, onOpenProject, onOpenAdm
       });
     }
     items.push(
+      { key: 'ai', label: 'AI API 配置', icon: 'settings', onClick: () => openAiSettings(user) },
       { key: 'settings', label: '账户设置', icon: 'settings', onClick: openSettings },
       { key: 'engine', label: '编译环境', icon: 'terminal', onClick: openEngineInfo },
       { sep: true },
@@ -484,5 +503,5 @@ export function renderDashboard(root, { user, onLogout, onOpenProject, onOpenAdm
   };
 
   load();
-  return () => {};
+  return () => closeExtensionWindows();
 }

@@ -145,7 +145,8 @@ const DOCUMENTCLASS_RE = /\\documentclass(?:\[[^\]]*\])?\s*\{[^}]+\}/;
  * 幂等：已存在对应包的声明则跳过。不改用户原有的 \usepackage 行。
  */
 export function buildFixedMain(text, clashes) {
-  const marker = '% LaTeXStudio: 预先声明宏包选项，避免 Option clash（可安全删除）';
+  const marker = '% underoot: 预先声明宏包选项，避免 Option clash（可安全删除）';
+  const legacyMarker = '% LaTeXStudio: 预先声明宏包选项，避免 Option clash（可安全删除）';
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
   const lines = text.split(/\r?\n/);
 
@@ -188,7 +189,7 @@ export function buildFixedMain(text, clashes) {
   // 再统一插到第一个 \documentclass 之前。
   const cleaned = [];
   for (let i = 0; i < lines.length; i += 1) {
-    if (lines[i].includes(marker)) {
+    if (lines[i].includes(marker) || lines[i].includes(legacyMarker)) {
       while (i + 1 < lines.length && /^\\PassOptionsToPackage\{/.test(lines[i + 1].trim())) i += 1;
       continue;
     }
@@ -257,7 +258,7 @@ export function diagnoseOptionClash(message) {
 const GREEK_RE = /\\(?:alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|pi|varpi|rho|varrho|sigma|varsigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega)\b/;
 // 匹配 \boldsymbol{\Phi} / \bm{\Phi}（组内可能还有其它内容，只替换命中的部分）
 const BOLD_GREEK_RE = /\\(?:boldsymbol|bm)\s*\{([^{}]*)\}/g;
-const SYMBF_SHIM = '\\providecommand{\\symbf}[1]{\\boldsymbol{#1}} % LaTeXStudio: 兼容非 unicode-math 引擎';
+const SYMBF_SHIM = '\\providecommand{\\symbf}[1]{\\boldsymbol{#1}} % underoot: 兼容非 unicode-math 引擎';
 
 /** parseLog 用的诊断：Improper alphabetic constant（\mitPhi 等） */
 export function diagnoseImproperAlpha(message, detail = '') {

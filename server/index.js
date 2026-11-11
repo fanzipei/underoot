@@ -18,6 +18,8 @@ import { projectsRouter } from './projects.js';
 import { systemRouter, detectEngines } from './compile.js';
 import { listTemplates } from './templates.js';
 import { attachCollab, flushAll } from './collab.js';
+import { workspaceRouter } from './workspace.js';
+import { extensionsRouter, extensionAssets } from './extensions.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -33,6 +35,9 @@ app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/system', systemRouter);
+app.use('/api/workspace', workspaceRouter);
+app.use('/api/extensions', extensionsRouter);
+app.use('/extensions', extensionAssets);
 app.get('/api/templates', (req, res) => res.json({ templates: listTemplates() }));
 app.get('/favicon.ico', (req, res) => res.type('image/svg+xml').sendFile(path.join(PUBLIC_DIR, 'favicon.svg')));
 
@@ -92,7 +97,7 @@ function seed() {
     fs.writeFileSync(mainPath, '\\documentclass{article}\n\\begin{document}\n你好，\\LaTeX!\n\\end{document}\n');
   }
   db.prepare('INSERT INTO projects (id,owner_id,name,main_file,template,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
-    .run(projectId, userId, '欢迎使用 LaTeXStudio', 'main.tex', 'chinese', ts, ts);
+    .run(projectId, userId, '欢迎使用 underoot', 'main.tex', 'chinese', ts, ts);
   db.prepare('INSERT INTO members (project_id,user_id,role,created_at) VALUES (?,?,?,?)')
     .run(projectId, userId, 'owner', ts);
   console.log('[seed] 已创建演示账号 demo@latex.studio / demo1234');
@@ -150,7 +155,7 @@ server.listen(PORT, HOST, () => {
   const { engines } = detectEngines();
   const engineText = engines.length ? engines.map((e) => e.id).join(', ') : '未检测到（请在设置页一键安装）';
   console.log('');
-  console.log('  LaTeXStudio 已启动');
+  console.log('  underoot 已启动');
   console.log(`  地址      http://localhost:${PORT}`);
   console.log(`  数据目录  ${DATA_DIR}`);
   console.log(`  编译器    ${engineText}`);

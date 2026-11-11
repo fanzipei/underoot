@@ -7,8 +7,8 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
-import { DATA_DIR, projectDir, resolveInside, isTextFile } from './paths.js';
-import { memberRole, touchProject, recordVersion } from './db.js';
+import { DATA_DIR, projectDir, resolveInside, isTextFile, normalizeRelPath } from './paths.js';
+import { db, memberRole, touchProject, recordVersion, getUserById } from './db.js';
 import { userFromRequest } from './auth.js';
 
 const MSG_SYNC = 0;
@@ -27,12 +27,17 @@ export function broadcastProject(projectId, payload) {
   for (const conn of clients) {
     if (conn.readyState !== 1) continue;
     // 成员可能刚被移除，广播时再做一次权限校验
-    if (!memberRole(projectId, conn.user?.id)) {
+    const account = getUserById(conn.user?.id);
+    if (!memberRole(projectId, conn.user?.id) || !account || account.disabled || account.status !== 'active') {
       try { conn.close(1008, 'access revoked'); } catch { /* ignore */ }
       continue;
     }
     try { conn.send(raw); } catch { /* ignore */ }
   }
+}
+
+export function broadcastAllProjects(payload) {
+  for (const projectId of projectClients.keys()) broadcastProject(projectId, payload);
 }
 
 /** 移除成员或删除项目时，立即断开指定用户（或全部用户）的在线连接 */
@@ -101,6 +106,7 @@ function loadText(projectId, relPath) {
 }
 
 function flush(room) {
+  if (room.closed) return;
   try {
     const target = resolveInside(projectDir(room.projectId), room.path);
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -227,14 +233,37 @@ export function syncExternalWrite(projectId, relPath, content) {
   }, 'external');
 }
 
-export function closeProjectDocs(projectId) {
+/** Retire rooms before moving/deleting files so late messages cannot recreate them. */
+export function closeFileDocs(projectId, relPath = null) {
   for (const [key, room] of docs) {
     if (room.projectId !== projectId) continue;
+    if (relPath !== null && room.path !== relPath && !room.path.startsWith(relPath + '/')) continue;
     if (room.saveTimer) clearTimeout(room.saveTimer);
     try { flush(room); } catch { /* ignore */ }
+    room.closed = true;
+    for (const conn of room.conns) {
+      try { conn.close(1008, 'file removed or renamed'); } catch { /* ignore */ }
+    }
+    room.awareness.destroy();
     try { room.doc.destroy(); } catch { /* ignore */ }
     docs.delete(key);
   }
+  // Include inactive rooms: their persisted state must not survive path reuse.
+  if (relPath !== null) {
+    const removeState = (rel) => {
+      try {
+        const full = resolveInside(projectDir(projectId), rel);
+        if (fs.statSync(full).isDirectory()) {
+          for (const name of fs.readdirSync(full)) removeState(`${rel}/${name}`);
+        } else fs.rmSync(stateFile(projectId, rel), { force: true });
+      } catch { /* missing file */ }
+    };
+    removeState(relPath);
+  }
+}
+
+export function closeProjectDocs(projectId) {
+  closeFileDocs(projectId);
   try { fs.rmSync(path.join(STATE_DIR, projectId), { recursive: true, force: true }); } catch { /* ignore */ }
 }
 
@@ -262,7 +291,7 @@ function parseCookies(header = '') {
   for (const part of header.split(';')) {
     const idx = part.indexOf('=');
     if (idx < 0) continue;
-    out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
+    try { out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim()); } catch { /* malformed cookie */ }
   }
   return out;
 }
@@ -317,12 +346,21 @@ export function attachCollab(server) {
     const sep = roomName.indexOf('::');
     if (sep < 0) { socket.destroy(); return; }
     const projectId = roomName.slice(0, sep);
-    const relPath = roomName.slice(sep + 2);
+    let relPath;
+    try {
+      relPath = normalizeRelPath(roomName.slice(sep + 2));
+      const full = resolveInside(projectDir(projectId), relPath);
+      if (!fs.statSync(full).isFile()) { socket.destroy(); return; }
+    } catch { socket.destroy(); return; }
     const role = memberRole(projectId, user.id);
     if (!role) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;
+    }
+    const epoch = db.prepare('SELECT collab_epoch FROM projects WHERE id=?').get(projectId)?.collab_epoch || 0;
+    if (Number(url.searchParams.get('epoch') || 0) !== epoch) {
+      socket.write('HTTP/1.1 409 Conflict\r\n\r\n'); socket.destroy(); return;
     }
     if (!isTextFile(relPath)) { socket.destroy(); return; }
 
@@ -377,44 +415,53 @@ export function attachCollab(server) {
     }
 
     conn.on('message', (data) => {
+      if (room.closed) return;
       // 每次协同消息都重新校验成员关系：被移除的成员即使连接尚未超时也不能继续编辑
-      if (!memberRole(conn.projectId, conn.user?.id)) {
+      const currentRole = memberRole(conn.projectId, conn.user?.id);
+      const account = getUserById(conn.user?.id);
+      if (!currentRole || !account || account.disabled || account.status !== 'active') {
         try { conn.close(1008, 'access revoked'); } catch { /* ignore */ }
         return;
       }
-      const decoder = decoding.createDecoder(new Uint8Array(data));
-      const type = decoding.readVarUint(decoder);
-      switch (type) {
-        case MSG_SYNC: {
-          const encoder = encoding.createEncoder();
-          encoding.writeVarUint(encoder, MSG_SYNC);
-          syncProtocol.readSyncMessage(decoder, encoder, room.doc, conn);
-          if (encoding.length(encoder) > 1) send(conn, encoding.toUint8Array(encoder));
-          break;
+      try {
+        const decoder = decoding.createDecoder(new Uint8Array(data));
+        const type = decoding.readVarUint(decoder);
+        switch (type) {
+          case MSG_SYNC: {
+            if (!['owner', 'editor'].includes(currentRole) && decoding.peekVarUint(decoder) !== 0) break;
+            const encoder = encoding.createEncoder();
+            encoding.writeVarUint(encoder, MSG_SYNC);
+            syncProtocol.readSyncMessage(decoder, encoder, room.doc, conn);
+            if (encoding.length(encoder) > 1) send(conn, encoding.toUint8Array(encoder));
+            break;
+          }
+          case MSG_AWARENESS: {
+            const bytes = decoding.readVarUint8Array(decoder);
+            for (const id of extractAwarenessIds(bytes)) conn.awarenessIds.add(id);
+            awarenessProtocol.applyAwarenessUpdate(room.awareness, bytes, conn);
+            break;
+          }
+          case MSG_QUERY_AWARENESS: {
+            const encoder = encoding.createEncoder();
+            encoding.writeVarUint(encoder, MSG_AWARENESS);
+            encoding.writeVarUint8Array(
+              encoder,
+              awarenessProtocol.encodeAwarenessUpdate(room.awareness, Array.from(room.awareness.getStates().keys())),
+            );
+            send(conn, encoding.toUint8Array(encoder));
+            break;
+          }
+          default:
+            break;
         }
-        case MSG_AWARENESS: {
-          const bytes = decoding.readVarUint8Array(decoder);
-          for (const id of extractAwarenessIds(bytes)) conn.awarenessIds.add(id);
-          awarenessProtocol.applyAwarenessUpdate(room.awareness, bytes, conn);
-          break;
-        }
-        case MSG_QUERY_AWARENESS: {
-          const encoder = encoding.createEncoder();
-          encoding.writeVarUint(encoder, MSG_AWARENESS);
-          encoding.writeVarUint8Array(
-            encoder,
-            awarenessProtocol.encodeAwarenessUpdate(room.awareness, Array.from(room.awareness.getStates().keys())),
-          );
-          send(conn, encoding.toUint8Array(encoder));
-          break;
-        }
-        default:
-          break;
+      } catch {
+        conn.close(1003, 'invalid collaboration message');
       }
     });
 
     conn.on('close', () => {
       room.conns.delete(conn);
+      if (room.closed) return;
       if (conn.awarenessIds.size) {
         awarenessProtocol.removeAwarenessStates(room.awareness, Array.from(conn.awarenessIds), null);
       }

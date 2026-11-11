@@ -12,6 +12,8 @@ import { WebsocketProvider } from 'y-websocket';
 import { yCollab, ySyncAnnotation } from 'y-codemirror.next';
 import { createPdfViewer } from '../pdf-viewer.js';
 import { createComments } from './comments.js';
+import { createResearchTools, openWorkspaceSearch, openNotifications, openAiSettings } from './research-tools.js';
+import { loadExtensions, enabledExtension, extensionCommands, openExtensionsManager, closeExtensionWindows } from '../extensions.js';
 
 import { api } from '../api.js';
 import {
@@ -166,7 +168,7 @@ const editorTheme = EditorView.theme({
 
 /* ---------------- 视图 ---------------- */
 
-export async function renderEditor(root, projectId, { user, onExit, onUserUpdate }) {
+export async function renderEditor(root, projectId, { user, onExit, onUserUpdate, initialLocation = {} }) {
   root.innerHTML = `<div class="center-fill"><div class="spinner spinner-dark"></div><div>正在打开项目…</div></div>`;
 
   let project;
@@ -201,6 +203,10 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   let activePath = null;
   let docs = new Map(); // path -> {doc, provider, ytext, undo}
   let compiling = false;
+  let changingEngine = false;
+  const canEdit = ['owner', 'editor'].includes(project.role);
+  let extensionList = await loadExtensions();
+  const assistantEnabled = enabledExtension(extensionList, 'underoot.assistant');
   let compileQueued = false;
   let autoCompile = localStorage.getItem('ls.autocompile') !== '0';
   let currentCompile = null;
@@ -210,14 +216,23 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   root.innerHTML = `
     <div class="editor-shell">
       <header class="ed-topbar">
-        <button class="ed-back" id="btn-back" title="返回项目列表">${icon('arrow-left', 'icon')}</button>
+        <button class="ed-back" id="btn-back" title="返回项目列表"><img src="/favicon.svg" width="26" height="26" alt="underoot" /></button>
         <div class="ed-title"><input id="proj-name" value="${escapeHtml(project.name)}" spellcheck="false" /></div>
         <div class="ed-save" id="save-state"><span class="dot"></span><span>已同步</span></div>
         <div class="spacer"></div>
         <div class="ed-crowd" id="crowd"></div>
         <button class="btn btn-ghost btn-icon btn-sm" id="btn-share" title="共享项目">${icon('users')}</button>
         <button class="btn btn-ghost btn-icon btn-sm" id="btn-comments" title="评论">${icon('message')}</button>
+        <button class="btn btn-sm" id="btn-assistant" title="修改建议中心">${assistantEnabled ? '助手' : '建议'}</button>
         <button class="btn btn-sm" id="btn-pdf-toggle" title="显示/隐藏 PDF 预览">${icon('file')}</button>
+        <label class="ed-engine" for="project-engine"><span>编译器</span>
+          <select id="project-engine" aria-label="项目编译器" title="仅设置当前项目；保存后自动重新编译">
+            <option value="auto">自动（服务端默认）</option>
+            ${engines.map((en) => `<option value="${escapeHtml(en.id)}">${escapeHtml(en.name)}</option>`).join('')}
+            ${project.engine && project.engine !== 'auto' && !engines.some((en) => en.id === project.engine)
+              ? `<option value="${escapeHtml(project.engine)}" disabled>${escapeHtml(project.engine)}（未安装）</option>` : ''}
+          </select>
+        </label>
         <button class="btn btn-primary btn-sm" id="btn-compile" style="height:30px;padding:0 12px">${icon('play')}<span>编译</span></button>
         <div id="user-chip" style="cursor:pointer">${avatarHtml(user, 'avatar-sm')}</div>
       </header>
@@ -229,6 +244,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
             <div class="side-actions">
               <button id="btn-new-file" title="新建文件">${icon('plus')}</button>
               <button id="btn-history" title="历史版本">${icon('clock')}</button>
+              <button id="btn-extensions" title="插件中心">${icon('grid')}</button>
               <button id="btn-more" title="更多">${icon('more')}</button>
             </div>
           </div>
@@ -236,6 +252,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
           <div class="side-foot">
             <button class="btn btn-sm" id="btn-upload" title="上传文件">${icon('upload')}上传</button>
             <button class="btn btn-sm" id="btn-download" title="下载项目 ZIP">${icon('download')}</button>
+            <button class="btn btn-sm" id="btn-project-history" title="项目完整版本与分支">分支</button>
           </div>
         </aside>
 
@@ -275,6 +292,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         </div>
 
         <aside class="comments-panel" id="comments-panel"></aside>
+        <aside class="assistant-panel" id="assistant-panel"></aside>
       </div>
 
       <div class="log-panel" id="log-panel" style="display:none">
@@ -306,6 +324,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     logBody: root.querySelector('#log-body'),
     logSummary: root.querySelector('#log-summary'),
     compileBtn: root.querySelector('#btn-compile'),
+    engineSelect: root.querySelector('#project-engine'),
     stPos: root.querySelector('#st-pos'),
     stSel: root.querySelector('#st-sel'),
     stEngine: root.querySelector('#st-engine'),
@@ -319,6 +338,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
   /* ---------- PDF 画布渲染（不使用浏览器 PDF 插件界面） ---------- */
   let comments = null;
+  let research = null;
   const pdfViewer = createPdfViewer(els.pdfBody, {
     emptyEl: els.pdfEmpty,
     onState: ({ zoom, pageCount }) => {
@@ -340,6 +360,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     state: EditorState.create({
       doc: '',
       extensions: [
+        EditorState.readOnly.of(!canEdit),
+        EditorView.editable.of(canEdit),
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightSpecialChars(),
@@ -390,10 +412,25 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   /* ---------- 协作评论（源码选区 + PDF 圈选） ---------- */
   comments = createComments({
     root, projectId, user, view, pdfViewer,
+    role: project.role,
+    onPdfRegion: (region) => research?.onPdfRegion(region),
+    onOpen: () => research?.close(),
     getActivePath: () => activePath,
     openFile: (p) => openFile(p),
   });
   view.dispatch({ effects: commentComp.reconfigure(comments.extension) });
+  research = createResearchTools({ root, project, user, view, pdfViewer, assistantEnabled, getActivePath: () => activePath,
+    openFile, compile, onOpen: () => comments?.closePanel() });
+  root.querySelector('#btn-assistant').onclick = () => research.open();
+  root.querySelector('#btn-project-history').onclick = () => research.openHistory();
+  root.querySelector('#btn-extensions').onclick = () => openExtensionsManager(user);
+  const extensionContext = { project, openProposals: () => research.open(),
+    getSelection: () => { const selection = view.state.selection.main; return /\.(tex|bib)$/i.test(activePath || '') ? { path: activePath, from: selection.from, to: selection.to } : null; },
+    getPdfSelection: () => research.getPdfSelection(),
+  };
+  const extensionActions = { 'assistant.open': () => research.open(), 'discovery.search': openWorkspaceSearch,
+    'publishing.slides': () => research.openDerive('slides'), 'publishing.poster': () => research.openDerive('poster'),
+    'publishing.template': () => research.openTemplate() };
 
   /* ---------- 文件树 ---------- */
   function fileIcon(name) {
@@ -479,7 +516,15 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   async function refreshTree() {
     const data = await api.get(`/api/projects/${projectId}/tree`);
     tree = data.tree;
+    project.mainFile = data.mainFile || project.mainFile;
     renderTree();
+  }
+
+  function closeAffectedTabs(path) {
+    for (const tab of [...tabs].reverse()) {
+      if (tab === path || tab.startsWith(path + '/')) closeTab(tab, true);
+    }
+    renderTabs();
   }
 
   async function createPath(path, type) {
@@ -496,12 +541,9 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     if (!to || to === from) return;
     try {
       await api.post(`/api/projects/${projectId}/rename`, { from, to });
-      if (tabs.includes(from)) {
-        closeTab(from, true);
-        tabs = tabs.map((t) => (t === from ? to : t));
-      }
+      closeAffectedTabs(from);
       await refreshTree();
-      await openFile(to);
+      if (findFile(tree, to)?.type === 'file') await openFile(to);
       toast('已重命名', 'ok');
     } catch (err) { toast(err.message, 'err'); }
   }
@@ -516,7 +558,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     if (!ok) return;
     try {
       await api.del(`/api/projects/${projectId}/file?path=${encodeURIComponent(path)}`);
-      closeTab(path, true);
+      closeAffectedTabs(path);
       await refreshTree();
       toast('已删除', 'ok');
     } catch (err) { toast(err.message, 'err'); }
@@ -541,8 +583,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     if (docs.has(path)) return docs.get(path);
     const doc = new Y.Doc();
     const provider = new WebsocketProvider(roomUrl(), `${projectId}::${path}`, doc, {
+      params: { token: wsToken, epoch: String(project.epoch || 0) },
       connect: true,
-      params: wsToken ? { token: wsToken } : {},
     });
     provider.awareness.setLocalStateField('user', {
       id: user.id, name: user.name, color: user.color,
@@ -623,6 +665,18 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
     try {
       const entry = ensureDoc(path);
+      // Search/comment anchors must wait for Yjs content, otherwise the selection
+      // is placed in an empty document and the initial sync moves it to line 1.
+      if (!entry.provider.synced) await new Promise((resolve, reject) => {
+        const onSync = (synced) => {
+          if (!synced) return;
+          clearTimeout(timeout); entry.provider.off('sync', onSync); resolve();
+        };
+        const timeout = setTimeout(() => { entry.provider.off('sync', onSync); reject(new Error('协作连接未完成，请刷新重试')); }, 8000);
+        entry.provider.on('sync', onSync);
+        if (entry.provider.synced) onSync(true);
+      });
+      if (activePath !== path || !els.host.isConnected) return;
       // y-codemirror 挂载时不会自动导入已有内容，这里先把编辑器内容对齐到 ytext 当前状态，
       // 之后远程同步的增量会由 observer 应用进来。
       view.dispatch({
@@ -696,6 +750,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
   /* ---------- 编译 ---------- */
   function setCompileBusy(busy, label = '编译') {
+    els.engineSelect.disabled = !canEdit || busy || changingEngine;
     els.compileBtn.disabled = busy;
     els.compileBtn.innerHTML = busy
       ? '<span class="spinner"></span><span>编译中</span>'
@@ -710,10 +765,12 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }
 
   function updateEngineStatus() {
+    els.engineSelect.value = project.engine || 'auto';
+    if (!canEdit) els.engineSelect.disabled = true;
     const label = engineName(project.engine);
     const extra = currentCompile?.engine ? ` · 上次 ${engineName(currentCompile.engine)}` : '';
     els.stEngine.textContent = `引擎 ${label}${extra}`;
-    els.stEngine.title = '在「⋯ → 编译引擎」中切换；pdfLaTeX 的排版与 Overleaf 默认一致';
+    els.stEngine.title = '在顶部「编译器」中切换；pdfLaTeX 的排版与 Overleaf 默认一致';
   }
 
   function applyCompileResult(res, { local = false, manual = false } = {}) {
@@ -743,10 +800,17 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     const query = wsToken ? `?token=${encodeURIComponent(wsToken)}` : '';
     const ws = new WebSocket(`${proto}://${location.host}/events/${projectId}${query}`);
     eventWs = ws;
-    ws.onopen = () => { eventRetry = 0; };
+    ws.onopen = async () => {
+      eventRetry = 0;
+      try {
+        const data = await api.get(`/api/projects/${projectId}`);
+        if (data.project.epoch !== project.epoch || data.project.role !== project.role) location.reload();
+      } catch { /* access changes are handled by subsequent requests */ }
+    };
     ws.onmessage = (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
+      research?.handleEvent(msg);
       if (msg.type === 'compile:start') {
         if (!compiling) {
           els.compileBtn.disabled = true;
@@ -756,8 +820,19 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         applyCompileResult(msg.result, { local: false });
       } else if (msg.type === 'file:changed') {
         refreshTree();
+      } else if (msg.type === 'project:engine') {
+        project.engine = msg.engine;
+        updateEngineStatus();
+      } else if (msg.type === 'file:deleted' || msg.type === 'file:renamed') {
+        closeAffectedTabs(msg.from || msg.path);
+        refreshTree();
       } else if (msg.type === 'comment:changed') {
         comments?.handleEvent(msg);
+      } else if (msg.type === 'project:reset' || msg.type === 'members:changed') {
+        if (msg.type === 'project:reset') location.reload();
+        else api.get(`/api/projects/${projectId}`).then((data) => { if (data.project.role !== project.role) location.reload(); }).catch(() => { location.hash = '#/'; });
+      } else if (msg.type === 'extensions:changed') {
+        closeExtensionWindows(); toast('插件配置已更新，刷新页面可更新入口', 'ok');
       }
     };
     ws.onclose = () => {
@@ -769,6 +844,11 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }
 
   async function compile(manual = false) {
+    if (!canEdit) {
+      const output = baseName(project.mainFile).replace(/\.[^.]+$/, '') + '.pdf';
+      if (findFile(tree, output)) showPdf(`/api/projects/${projectId}/pdf?file=${encodeURIComponent(output)}`);
+      return;
+    }
     if (compiling) { compileQueued = true; return; }
     compiling = true;
     setCompileBusy(true);
@@ -956,7 +1036,9 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   };
 
   async function setEngine(id) {
-    if (id === (project.engine || 'auto')) return;
+    if (changingEngine || id === (project.engine || 'auto')) return;
+    changingEngine = true;
+    els.engineSelect.disabled = true;
     try {
       const res = await api.patch(`/api/projects/${projectId}`, { engine: id });
       project.engine = res.project.engine;
@@ -965,10 +1047,18 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
       await compile(true);
     } catch (err) {
       toast(err.message, 'err');
+    } finally {
+      changingEngine = false;
+      updateEngineStatus();
+      els.engineSelect.disabled = !canEdit || compiling;
     }
   }
 
-  root.querySelector('#btn-more').onclick = (e) => {
+  els.engineSelect.onchange = () => setEngine(els.engineSelect.value);
+
+  root.querySelector('#btn-more').onclick = async (e) => {
+    const anchor = e.currentTarget;
+    try { extensionList = await loadExtensions(); } catch (error) { toast(error.message, 'err'); return; }
     const current = project.engine || 'auto';
     const engineItems = engines.length
       ? [
@@ -983,7 +1073,12 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
           { sep: true },
         ]
       : [];
-    dropdown(e.currentTarget, [
+    dropdown(anchor, [
+      ...extensionCommands(extensionList, extensionActions, extensionContext),
+      { key: 'extensions', label: '插件中心 · 安装与管理', icon: 'grid', onClick: () => openExtensionsManager(user) },
+      { key: 'project-history', label: '项目版本与分支', icon: 'clock', onClick: () => research.openHistory() },
+      { key: 'notifications', label: '与我有关的讨论', icon: 'message', onClick: openNotifications },
+      { sep: true },
       { key: 'compile', label: '重新编译', icon: 'play', onClick: () => compile(true) },
       { key: 'log', label: '查看编译日志', icon: 'terminal', onClick: openLogPanel },
       { key: 'auto', label: `${autoCompile ? '✓ ' : ''}自动编译`, icon: 'check', onClick: () => {
@@ -1068,6 +1163,9 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   root.querySelector('#user-chip').onclick = (e) => {
     dropdown(e.currentTarget, [
       { meta: { title: user.name, sub: user.email } },
+      { key: 'extensions', label: '插件中心', icon: 'grid', onClick: () => openExtensionsManager(user) },
+      { key: 'ai-config', label: 'AI API 配置', icon: 'settings', onClick: () => openAiSettings(user) },
+      { key: 'notifications', label: '讨论通知', icon: 'message', onClick: openNotifications },
       { key: 'logout', label: '退出登录', icon: 'logout', danger: true, onClick: async () => {
         await api.post('/api/auth/logout');
         location.hash = '';
@@ -1102,15 +1200,17 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     const link = `${location.origin}/#/p/${projectId}`;
     const { root: m, close } = modal({
       title: '共享项目',
-      subtitle: '通过邮箱邀请已注册的成员一起实时编辑',
+      subtitle: '按职责共享：编辑者、审阅者、只读成员',
       bodyHtml: `
-        <div class="field">
+        ${project.role === 'owner' ? `<div class="field">
           <label>邀请成员</label>
           <div style="display:flex;gap:8px">
             <input class="input" id="invite-email" placeholder="teammate@example.com" />
+            <select class="input" id="invite-role" aria-label="邀请成员角色"><option value="editor">编辑者</option><option value="reviewer">审阅者</option><option value="viewer">只读</option></select>
             <button class="btn btn-primary" id="invite-btn">邀请</button>
           </div>
-        </div>
+        </div>` : '<p class="src-note">只有所有者可以邀请成员或更改权限。</p>'}
+        <p class="src-note">编辑者可改稿；审阅者可评论与提出建议；只读成员仅浏览。修改权限会立即断开旧协作连接。</p>
         <div style="margin-top:6px">
           <div style="font-size:12.5px;font-weight:600;color:var(--text-2);margin-bottom:8px">成员（${members.length}）</div>
           <div id="member-list">
@@ -1118,13 +1218,13 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
               ${avatarHtml(mem, 'avatar-sm')}
               <div style="flex:1"><div style="font-size:13px">${escapeHtml(mem.name)}</div>
               <div style="font-size:11.5px;color:var(--muted)">${escapeHtml(mem.email)}</div></div>
-              <span class="badge ${mem.role === 'owner' ? 'badge-green' : ''}">${mem.role === 'owner' ? '所有者' : '编辑者'}</span>
-              ${mem.role !== 'owner' ? `<button class="btn btn-ghost btn-sm" data-remove="${mem.id}">移除</button>` : ''}
+              ${mem.role !== 'owner' && project.role === 'owner' ? `<select class="input member-role" aria-label="${escapeHtml(mem.name)}的权限" data-member-role="${mem.id}">${[['editor','编辑者'],['reviewer','审阅者'],['viewer','只读']].map(([value,label]) => `<option value="${value}" ${value === mem.role ? 'selected' : ''}>${label}</option>`).join('')}</select>` : `<span class="badge">${({owner:'所有者',editor:'编辑者',reviewer:'审阅者',viewer:'只读'})[mem.role] || mem.role}</span>`}
+              ${mem.role !== 'owner' && project.role === 'owner' ? `<button class="btn btn-ghost btn-sm" data-remove="${mem.id}">移除</button>` : ''}
             </div>`).join('')}
           </div>
         </div>
         <div class="field" style="margin-top:14px;margin-bottom:0">
-          <label>项目链接</label>
+          <label>项目链接（仅已加入的成员可以访问）</label>
           <div style="display:flex;gap:8px">
             <input class="input" value="${escapeHtml(link)}" readonly />
             <button class="btn" id="copy-link">复制</button>
@@ -1136,16 +1236,20 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     m.querySelector('#copy-link').onclick = async () => {
       try { await navigator.clipboard.writeText(link); toast('链接已复制', 'ok'); } catch { toast('复制失败', 'err'); }
     };
-    m.querySelector('#invite-btn').onclick = async () => {
+    m.querySelector('#invite-btn')?.addEventListener('click', async () => {
       const email = m.querySelector('#invite-email').value.trim();
       if (!email) return;
       try {
-        await api.post(`/api/projects/${projectId}/members`, { email });
+        await api.post(`/api/projects/${projectId}/members`, { email, role: m.querySelector('#invite-role').value });
         toast('已添加成员', 'ok');
         close();
         openShare();
       } catch (err) { toast(err.message, 'err'); }
-    };
+    });
+    m.querySelectorAll('[data-member-role]').forEach((select) => { select.onchange = async () => {
+      try { await api.patch(`/api/projects/${projectId}/members/${select.dataset.memberRole}`, { role: select.value }); toast('成员权限已更新', 'ok'); }
+      catch (error) { toast(error.message, 'err'); }
+    }; });
     m.querySelectorAll('[data-remove]').forEach((btn) => {
       btn.onclick = async () => {
         try {
@@ -1249,6 +1353,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   onDocChange = (update) => {
     if (update.transactions.some((tr) => tr.annotation(ySyncAnnotation))) return;
     scheduleCompile();
+    research?.scheduleReview();
   };
 
   const keyHandler = (e) => {
@@ -1277,6 +1382,17 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }
   const first = project.mainFile && findFile(tree, project.mainFile) ? project.mainFile : firstFile(tree);
   if (first) await openFile(first);
+  if (initialLocation.file && findFile(tree, initialLocation.file)) {
+    await openFile(initialLocation.file);
+    const line = Math.max(1, Math.min(view.state.doc.lines, Number(initialLocation.line) || 1));
+    const position = view.state.doc.line(line).from;
+    view.dispatch({ selection: { anchor: position }, effects: EditorView.scrollIntoView(position, { y: 'center' }) });
+  }
+  if (initialLocation.comment) comments.focusThread(initialLocation.comment);
+  if (!canEdit) {
+    root.querySelector('#proj-name').readOnly = true;
+    for (const id of ['btn-new-file', 'btn-upload', 'btn-fix-clash']) root.querySelector('#' + id).disabled = true;
+  }
 
   // 初次编译
   setTimeout(() => {
@@ -1287,6 +1403,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     window.removeEventListener('keydown', keyHandler);
     eventClosed = true;
     try { comments?.destroy(); } catch { /* ignore */ }
+    try { research?.destroy(); } catch { /* ignore */ }
+    closeExtensionWindows();
     try { eventWs?.close(); } catch { /* ignore */ }
     try { pdfViewer.destroy(); } catch { /* ignore */ }
     try { binaryViewer?.destroy(); } catch { /* ignore */ }

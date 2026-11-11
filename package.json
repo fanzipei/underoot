@@ -1,16 +1,18 @@
 {
-  "name": "latexstudio",
-  "version": "0.1.0",
+  "name": "underoot",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "本地部署的在线 LaTeX 协作编辑与编译平台",
+  "description": "可插件扩展、可本地部署的 vibe research 协作平台",
   "main": "server/index.js",
   "scripts": {
     "build": "node scripts/build.mjs",
     "start": "node --disable-warning=ExperimentalWarning scripts/build.mjs && node --disable-warning=ExperimentalWarning server/index.js",
     "serve": "node --disable-warning=ExperimentalWarning server/index.js",
     "dev": "node scripts/build.mjs --watch",
-    "test": "node scripts/smoke-test.mjs"
+    "test": "node scripts/smoke-test.mjs",
+    "test:isolated": "node scripts/test-isolated.mjs",
+    "test:research": "node scripts/test-isolated.mjs --research"
   },
   "keywords": [
     "latex",
@@ -44,5 +46,9 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fanzipei/underoot.git"
   }
 }

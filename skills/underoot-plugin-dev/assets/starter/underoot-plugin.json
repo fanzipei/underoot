@@ -1,0 +1,6 @@
+{
+  "id": "my-lab.research-tool", "name": "Research tool", "version": "1.0.0", "apiVersion": 1,
+  "runtime": "iframe", "entry": "index.html", "description": "Inspect the author's current research selection.",
+  "permissions": ["selection.read"],
+  "contributes": { "commands": [{ "id": "my-lab.research-tool.open", "title": "Open research tool", "when": "editor" }] }
+}

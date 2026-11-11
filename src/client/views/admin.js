@@ -26,7 +26,7 @@ export function renderAdmin(root, { user, onExit, onPendingChange }) {
   root.innerHTML = `
     <div class="topbar">
       <button class="btn btn-icon" id="admin-back" title="返回项目">${icon('arrow-left')}</button>
-      <div class="brand"><span class="mark">T</span><span class="full">账号审批</span></div>
+      <div class="brand"><span class="mark" aria-label="underoot"><svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 17l4-2 5 10 6-18h8" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" /></svg></span><span class="full">账号审批</span></div>
       <div class="spacer"></div>
       <button class="btn" id="admin-refresh">${icon('refresh')}刷新</button>
     </div>

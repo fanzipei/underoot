@@ -64,7 +64,7 @@ const commentField = StateField.define({
 
 export function createComments({
   root, projectId, user, view, pdfViewer,
-  getActivePath, openFile, onCount,
+  getActivePath, openFile, onCount, role = 'editor', onPdfRegion, onOpen,
 }) {
   let comments = [];
   let filter = 'open';           // open | all
@@ -72,6 +72,11 @@ export function createComments({
   let panelOpen = false;
   let selectMode = false;
   let destroyed = false;
+  let members = [];
+  let query = '';
+  const drafts = new Map();
+  const replyTargets = new Map();
+  const canComment = role !== 'viewer';
 
   const base = `/api/projects/${projectId}/comments`;
   const panel = root.querySelector('#comments-panel');
@@ -90,7 +95,7 @@ export function createComments({
 
   function updateFloatButton() {
     const sel = view.state.selection.main;
-    if (!host.isConnected || !view.dom.isConnected || !selectablePath() || sel.empty) {
+    if (!canComment || !host.isConnected || !view.dom.isConnected || !selectablePath() || sel.empty) {
       floatBtn.style.display = 'none'; return;
     }
     const quote = view.state.doc.sliceString(sel.from, sel.to).trim();
@@ -125,7 +130,7 @@ export function createComments({
       await load();
       openPanel();
       toast('评论已添加', 'ok');
-    });
+    }, onPdfRegion ? () => { onPdfRegion({ source: true, question: '检查当前源码选区的表述与引用' }); } : null);
   };
 
   /* ---------- CodeMirror 扩展 ---------- */
@@ -198,12 +203,12 @@ export function createComments({
     // 太小的拖拽视为误触
     if (!rect || rect.w < 0.008 || rect.h < 0.008) return;
     const page = Number(wrapper.dataset.page);
-    promptComment(`给第 ${page} 页的圈选区域添加评论`, null, async (text) => {
+    promptComment(`第 ${page} 页 · 圈选区域`, null, async (text) => {
       await api.post(base, { body: text, anchorType: 'pdf', page, rect });
       await load();
       openPanel();
       toast('圈选评论已添加', 'ok');
-    });
+    }, onPdfRegion ? (question) => onPdfRegion({ page, rect, question }) : null);
   }
 
   function paintPdfMarks() {
@@ -244,6 +249,7 @@ export function createComments({
       mark.style.width = `${c.rect.w * 100}%`;
       mark.style.height = `${c.rect.h * 100}%`;
       mark.title = `${c.authorName}：${c.body.slice(0, 80)}`;
+      mark.dataset.commentId = c.id;
       const badge = document.createElement('span');
       badge.className = 'pdf-comment-badge';
       badge.textContent = String(idx + 1);
@@ -265,23 +271,24 @@ export function createComments({
   }
 
   /* ---------- 新建评论输入框 ---------- */
-  function promptComment(title, quote, submit) {
+  function promptComment(title, quote, submit, review = null) {
     const quoteHtml = quote
       ? `<div class="comment-quote">${escapeHtml(quote.slice(0, MAX_QUOTE))}${quote.length > MAX_QUOTE ? '…' : ''}</div>`
       : '';
     const { root: m, close } = modal({
       title,
       bodyHtml: `${quoteHtml}<div class="field" style="margin:0">
-        <label>评论内容</label>
+        <label>评论内容或向 AI 提问</label>
         <textarea class="input" id="comment-input" rows="4" maxlength="8000" placeholder="写下你的意见，其他成员可以回复…"></textarea>
       </div>`,
-      footerHtml: '<button class="btn" data-act="cancel">取消</button><button class="btn btn-primary" data-act="ok">添加评论</button>',
+      footerHtml: `<button class="btn" data-act="cancel">取消</button>${review ? '<button class="btn" data-act="ai">交给论文助手</button>' : ''}<button class="btn btn-primary" data-act="ok" ${canComment ? '' : 'disabled'}>添加评论</button>`,
       onMount: (backdrop) => {
         backdrop.querySelector('#comment-input')?.focus();
       },
     });
     const input = m.querySelector('#comment-input');
     m.querySelector('[data-act="cancel"]').onclick = close;
+    m.querySelector('[data-act="ai"]')?.addEventListener('click', () => { close(); review(input.value.trim()); });
     m.querySelector('[data-act="ok"]').onclick = async () => {
       const text = String(input.value || '').trim();
       if (!text) { toast('请输入评论内容', 'err'); input.focus(); return; }
@@ -298,7 +305,7 @@ export function createComments({
   }
 
   /* ---------- 面板渲染 ---------- */
-  function openPanel() { panelOpen = true; panel.classList.add('open'); paint(); }
+  function openPanel() { onOpen?.(); panelOpen = true; panel.classList.add('open'); paint(); }
   function closePanel() { panelOpen = false; panel.classList.remove('open'); }
   function togglePanel() { panelOpen ? closePanel() : openPanel(); }
 
@@ -310,7 +317,7 @@ export function createComments({
 
   function threadHtml(c, index) {
     const isOpen = expanded.has(c.id);
-    const canDelete = c.authorId === user.id || c.authorEmail === user.email;
+    const canDelete = canComment && (role === 'owner' || c.authorId === user.id || c.authorEmail === user.email);
     const replies = c.replies.length;
     return `
       <div class="comment-thread${c.resolved ? ' resolved' : ''}${isOpen ? ' expanded' : ''}" data-id="${c.id}">
@@ -322,6 +329,7 @@ export function createComments({
             <div class="comment-anchor">${icon(c.anchorType === 'pdf' ? 'file' : 'file')}${anchorLabel(c)}</div>
             ${c.quote ? `<div class="comment-quote small">${escapeHtml(c.quote.slice(0, 90))}${c.quote.length > 90 ? '…' : ''}</div>` : ''}
             <div class="comment-stats">${icon('message')}${replies ? `${replies} 条回复` : '暂无回复'}${c.resolved ? '<span class="badge badge-green">已解决</span>' : ''}</div>
+            ${c.priority === 'high' ? '<span class="badge priority-high">优先处理</span>' : ''}${c.assigneeId ? `<span class="badge">指派：${escapeHtml(members.find((m) => m.id === c.assigneeId)?.name || '成员')}</span>` : ''}
           </div>
           <span class="comment-index">${index + 1}</span>
         </div>
@@ -331,15 +339,19 @@ export function createComments({
               <div class="comment-reply">
                 ${avatarHtml({ name: r.authorName, color: r.authorColor }, 'sm')}
                 <div><div class="comment-meta"><b>${escapeHtml(r.authorName)}</b><span>${timeAgo(r.createdAt)}</span></div>
-                <div class="comment-body">${escapeHtml(r.body)}</div></div>
+                ${r.replyTo ? `<div class="comment-anchor">↳ 回复 ${escapeHtml(c.replies.find((x) => x.id === r.replyTo)?.authorName || '已删除回复')}</div>` : ''}
+                <div class="comment-body">${escapeHtml(r.body)}</div>
+                ${canComment ? `<div class="comment-actions"><button class="btn btn-ghost btn-sm" data-quote="${r.id}" data-thread="${c.id}">回复此条</button>${r.authorId === user.id || role === 'owner' ? `<button class="btn btn-ghost btn-sm" data-edit-reply="${r.id}" data-thread="${c.id}">编辑</button><button class="btn btn-ghost btn-sm" data-remove-reply="${r.id}" data-thread="${c.id}">删除</button>` : ''}</div>` : ''}</div>
               </div>`).join('')}
-            <div class="comment-reply-form">
-              <input class="input" data-reply="${c.id}" placeholder="回复 ${escapeHtml(c.authorName)}…" maxlength="8000" />
+            ${replyTargets.has(c.id) ? `<div class="comment-anchor">正在回复 ${escapeHtml(c.replies.find((r) => r.id === replyTargets.get(c.id))?.authorName || '成员')} <button class="btn btn-ghost btn-sm" data-cancel-reply="${c.id}">取消引用</button></div>` : ''}
+            ${canComment ? `<div class="comment-reply-form">
+              <input class="input" data-reply="${c.id}" value="${escapeHtml(drafts.get(c.id) || '')}" placeholder="回复 / @成员邮箱…" maxlength="8000" />
               <button class="btn btn-primary btn-sm" data-act="reply" data-id="${c.id}">发送</button>
-            </div>
+            </div><div class="discussion-assignment"><select class="input" aria-label="指派处理人" data-assignee="${c.id}"><option value="">未指派</option>${members.filter((m) => m.role !== 'viewer').map((m) => `<option value="${m.id}" ${c.assigneeId === m.id ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('')}</select><select class="input" aria-label="评论优先级" data-priority="${c.id}"><option value="normal">普通</option><option value="high" ${c.priority === 'high' ? 'selected' : ''}>优先处理</option></select></div>` : ''}
             <div class="comment-actions">
               <button class="btn btn-ghost btn-sm" data-act="locate" data-id="${c.id}">${icon('arrow-right')}定位</button>
-              <button class="btn btn-ghost btn-sm" data-act="resolve" data-id="${c.id}">${c.resolved ? '重新打开' : '标记已解决'}</button>
+              ${canComment ? `<button class="btn btn-ghost btn-sm" data-act="resolve" data-id="${c.id}">${c.resolved ? '重新打开' : '标记已解决'}</button>` : ''}
+              ${canDelete ? `<button class="btn btn-ghost btn-sm" data-edit-comment="${c.id}">编辑评论</button>` : ''}
               ${canDelete ? `<button class="btn btn-ghost btn-sm danger-text" data-act="delete" data-id="${c.id}">删除</button>` : ''}
             </div>
           </div>` : ''}
@@ -348,7 +360,9 @@ export function createComments({
 
   function paint() {
     if (!panelOpen) { paintBadge(); return; }
-    const shown = filter === 'all' ? comments : comments.filter((c) => !c.resolved);
+    const shown = comments.filter((c) => (filter === 'all' || (filter === 'open' && !c.resolved) || (filter === 'resolved' && c.resolved)
+      || (filter === 'mine' && (c.assigneeId === user.id || c.authorId === user.id || c.body.includes('@' + user.email) || c.replies.some((r) => r.authorId === user.id || r.body.includes('@' + user.email)))))
+      && (!query || [c.body, c.quote, ...c.replies.map((r) => r.body)].join('\n').toLowerCase().includes(query.toLowerCase())));
     panel.innerHTML = `
       <div class="comments-head">
         <b>${icon('message')}评论 <span class="comments-count">${comments.length}</span></b>
@@ -358,7 +372,10 @@ export function createComments({
       <div class="comments-filters">
         <button data-filter="open" class="${filter === 'open' ? 'active' : ''}">未解决 ${comments.filter((c) => !c.resolved).length}</button>
         <button data-filter="all" class="${filter === 'all' ? 'active' : ''}">全部 ${comments.length}</button>
+        <button data-filter="mine" class="${filter === 'mine' ? 'active' : ''}">与我有关</button>
+        <button data-filter="resolved" class="${filter === 'resolved' ? 'active' : ''}">已解决</button>
       </div>
+      <div class="discussion-search"><input class="input" id="comment-search" placeholder="搜索评论和回复…" value="${escapeHtml(query)}" /></div>
       <div class="comments-list">
         ${shown.length ? shown.map((c, i) => threadHtml(c, i)).join('')
           : `<div class="comments-empty">${comments.length ? '未解决的评论都处理完了 🎉' : '还没有评论。<br />在左侧文件里选中一段文字，或点 PDF 工具栏的框选按钮圈一块区域。'}</div>`}
@@ -366,6 +383,19 @@ export function createComments({
       <div class="comments-foot">选中文字 →「添加评论」；PDF 圈选 → 拖出区域</div>`;
 
     panel.querySelector('#comments-close').onclick = closePanel;
+    panel.querySelector('#comment-search').oninput = (event) => {
+      const position = event.target.selectionStart; query = event.target.value; paint();
+      const input = panel.querySelector('#comment-search'); input.focus(); input.setSelectionRange(position, position);
+    };
+    panel.querySelectorAll('[data-assignee],[data-priority]').forEach((input) => { input.onchange = async () => {
+      const id = input.dataset.assignee || input.dataset.priority;
+      try { await api.patch(`${base}/${id}`, input.dataset.assignee ? { assigneeId: input.value || null } : { priority: input.value }); await load(); }
+      catch (error) { toast(error.message, 'err'); }
+    }; });
+    panel.querySelectorAll('[data-quote]').forEach((button) => { button.onclick = () => { replyTargets.set(button.dataset.thread, button.dataset.quote); paint(); panel.querySelector(`[data-reply="${button.dataset.thread}"]`)?.focus(); }; });
+    panel.querySelectorAll('[data-cancel-reply]').forEach((button) => { button.onclick = () => { replyTargets.delete(button.dataset.cancelReply); paint(); }; });
+    panel.querySelectorAll('[data-edit-comment]').forEach((button) => { button.onclick = () => editText(button.dataset.editComment); });
+    panel.querySelectorAll('[data-edit-reply],[data-remove-reply]').forEach((button) => { button.onclick = () => editText(button.dataset.thread, button.dataset.editReply || button.dataset.removeReply, !!button.dataset.removeReply); });
     panel.querySelectorAll('[data-filter]').forEach((b) => {
       b.onclick = () => { filter = b.dataset.filter; paint(); };
     });
@@ -381,6 +411,7 @@ export function createComments({
     panel.querySelectorAll('[data-act="delete"]').forEach((b) => { b.onclick = () => remove(b.dataset.id); });
     panel.querySelectorAll('[data-act="reply"]').forEach((b) => { b.onclick = () => sendReply(b.dataset.id); });
     panel.querySelectorAll('[data-reply]').forEach((inp) => {
+      inp.oninput = () => drafts.set(inp.dataset.reply, inp.value);
       inp.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(inp.dataset.reply); } };
     });
     paintBadge();
@@ -419,7 +450,7 @@ export function createComments({
       if (!wrapper) { toast('请先编译生成 PDF 预览', 'err'); return; }
       root.querySelector('#pane-pdf').style.display = 'flex';
       wrapper.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      const mark = wrapper.querySelector(`.pdf-comment-mark[title*="${c.id}"]`) || wrapper.querySelector('.pdf-comment-mark');
+      const mark = wrapper.querySelector(`.pdf-comment-mark[data-comment-id="${c.id}"]`);
       mark?.classList.add('flash');
       setTimeout(() => mark?.classList.remove('flash'), 1200);
       return;
@@ -459,7 +490,8 @@ export function createComments({
     if (!text) { input?.focus(); return; }
     try {
       input.disabled = true;
-      await api.post(`${base}/${id}/replies`, { body: text });
+      await api.post(`${base}/${id}/replies`, { body: text, replyTo: replyTargets.get(id) || null });
+      drafts.delete(id); replyTargets.delete(id);
       await load();
       expanded.add(id);
       paint();
@@ -481,11 +513,32 @@ export function createComments({
     } catch (err) { toast(err.message, 'err'); }
   }
 
+  async function editText(commentId, replyId = null, removeReply = false) {
+    const comment = comments.find((c) => c.id === commentId);
+    const item = replyId ? comment?.replies.find((r) => r.id === replyId) : comment;
+    if (!item) return;
+    const endpoint = replyId ? `/api/workspace/projects/${projectId}/comments/${commentId}/replies/${replyId}` : `${base}/${commentId}`;
+    if (removeReply) {
+      if (!await confirmDialog({ title: '删除这条回复', message: '只删除此回复，讨论线程保留。', confirmText: '删除', danger: true })) return;
+      try { await api.del(endpoint); await load(); } catch (error) { toast(error.message, 'err'); }
+      return;
+    }
+    const { root: m, close } = modal({ title: replyId ? '编辑回复' : '编辑评论', bodyHtml: `<textarea class="input" id="discussion-edit" rows="6" maxlength="8000">${escapeHtml(item.body)}</textarea>`,
+      footerHtml: '<button class="btn" data-cancel>取消</button><button class="btn btn-primary" data-save>保存修改</button>' });
+    m.querySelector('[data-cancel]').onclick = close;
+    m.querySelector('[data-save]').onclick = async () => {
+      try { await api.patch(endpoint, { body: m.querySelector('#discussion-edit').value, expectedUpdatedAt: item.updatedAt }); close(); await load(); }
+      catch (error) { toast(error.message, 'err'); }
+    };
+  }
+
   /* ---------- 数据 ---------- */
   async function load() {
     if (destroyed) return;
     try {
-      const data = await api.get(base);
+      const [data, memberData] = await Promise.all([api.get(base), api.get(`/api/projects/${projectId}/members`)]);
+      if (destroyed) return;
+      members = memberData.members;
       comments = data.comments || [];
       refreshDecorations();
       paintPdfMarks();
@@ -507,6 +560,7 @@ export function createComments({
     openPanel,
     closePanel,
     togglePanel,
+    focusThread(id) { openPanel(); focusThread(id); load(); },
     setSelectMode,
     refreshDecorations,
     repaintPdf: paintPdfMarks,

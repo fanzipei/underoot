@@ -1,0 +1,7 @@
+{
+  "id": "underoot.discovery", "name": "跨项目研究发现", "version": "0.2.0", "apiVersion": 1,
+  "runtime": "builtin", "entry": "activate.mjs", "author": "underoot", "license": "MIT",
+  "description": "按访问权限检索项目正文、文献、评论和回复，并定位来源。",
+  "permissions": ["project.read", "comments.read"],
+  "contributes": { "commands": [{ "id": "underoot.discovery.search", "title": "跨项目全文搜索", "when": "all", "handler": "discovery.search" }] }
+}

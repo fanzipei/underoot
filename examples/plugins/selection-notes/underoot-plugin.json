@@ -1,0 +1,7 @@
+{
+  "id": "community.selection-notes", "name": "选区研究笔记", "version": "1.0.0", "apiVersion": 1,
+  "entry": "index.html", "runtime": "iframe", "author": "underoot example", "license": "MIT",
+  "description": "无需模型的插件示例：读取选区、统计文本、提出可审阅的拼写修改，并保存个人笔记。",
+  "permissions": ["selection.read", "suggestions.propose", "storage"],
+  "contributes": { "commands": [{ "id": "community.selection-notes.open", "title": "插件示例：选区研究笔记", "when": "editor" }] }
+}

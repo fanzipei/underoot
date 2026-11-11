@@ -1,0 +1,7 @@
+{
+  "id": "underoot.assistant", "name": "论文审阅助手", "version": "0.2.0", "apiVersion": 1,
+  "runtime": "builtin", "entry": "activate.mjs", "author": "underoot", "license": "MIT",
+  "description": "本地论文检查、模型审阅、PDF 区域建议和候选文献检索。",
+  "permissions": ["project.read", "selection.read", "pdf.read", "ai.invoke", "suggestions.propose"],
+  "contributes": { "commands": [{ "id": "underoot.assistant.open", "title": "论文助手与修改建议", "when": "editor", "handler": "assistant.open" }] }
+}

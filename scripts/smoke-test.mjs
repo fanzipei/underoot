@@ -96,7 +96,7 @@ async function req(path, opts = {}) {
 }
 
 async function main() {
-  console.log(`\nLaTeXStudio 回归测试  ${BASE}\n`);
+  console.log(`\nunderoot 回归测试  ${BASE}\n`);
 
   // --- 编译日志诊断（纯函数，无需服务）---
   {
@@ -111,6 +111,8 @@ async function main() {
     const err = parsed.errors.find((e) => /Improper alphabetic constant/i.test(e.message));
     check('parseLog 识别 unicode-math 粗体错误', err?.code === 'unicode-math-bold', err?.code);
     check('unicode-math 错误带修复建议', !!err?.hint && /symbf/.test(err.hint), '');
+    const fileError = parseLog('./main.tex:7: LaTeX Error: Option clash for package xcolor.').errors[0];
+    check('file-line-error 格式保留一键修复诊断', fileError?.code === 'option-clash' && fileError?.package === 'xcolor');
   }
   {
     const { detectEngines, pickEngine, engineLabel, enginePathDirs } = await import('../server/compile.js');
@@ -120,6 +122,14 @@ async function main() {
     check('pickEngine auto 走默认优先级', !!pickEngine('auto'), '');
     check('引擎有可读标签', engineLabel('latexmk').includes('pdfLaTeX') && engineLabel('tectonic').includes('Tectonic'));
     check('enginePathDirs 返回数组', Array.isArray(enginePathDirs()), `${enginePathDirs().length} 个目录`);
+    const previous = process.env.LATEX_ENGINE;
+    try {
+      process.env.LATEX_ENGINE = list.at(-1);
+      check('auto 尊重服务端默认引擎', pickEngine('auto')?.id === list.at(-1));
+    } finally {
+      if (previous === undefined) delete process.env.LATEX_ENGINE;
+      else process.env.LATEX_ENGINE = previous;
+    }
   }
 
   // --- 认证与安全 ---
@@ -160,6 +170,24 @@ async function main() {
     const target = availableEngines[0].id;
     const set = await req(`/api/projects/${pid}`, { method: 'PATCH', body: JSON.stringify({ engine: target }) });
     check('可设置项目级引擎', set.status === 200 && set.data?.project?.engine === target, target);
+    check('重新打开项目保留编译器设置', (await req(`/api/projects/${pid}`)).data?.project?.engine === target);
+    const other = await req('/api/projects', { method: 'POST', body: JSON.stringify({ name: '引擎隔离测试', template: 'blank' }) });
+    const otherId = other.data?.project?.id;
+    createdProjects.push(otherId);
+    check('各项目编译器设置互相独立', other.data?.project?.engine === 'auto'
+      && (await req(`/api/projects/${pid}`)).data?.project?.engine === target);
+    const engineToken = (await req('/api/auth/ws-token')).data?.token;
+    const settingEvent = await new Promise((resolve) => {
+      const ws = new WebSocket(`${WS_BASE}/events/${pid}?token=${engineToken}`);
+      const timer = setTimeout(() => { ws.terminate(); resolve(null); }, 5000);
+      ws.on('open', () => req(`/api/projects/${pid}`, { method: 'PATCH', body: JSON.stringify({ engine: target }) }).catch(() => ws.terminate()));
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString());
+        if (msg.type === 'project:engine') { clearTimeout(timer); ws.close(); resolve(msg.engine); }
+      });
+      ws.on('error', () => { clearTimeout(timer); resolve(null); });
+    });
+    check('编译器设置实时通知协作者', settingEvent === target);
     const back = await req(`/api/projects/${pid}`, { method: 'PATCH', body: JSON.stringify({ engine: 'auto' }) });
     check('可恢复 auto', back.status === 200 && back.data?.project?.engine === 'auto', '');
   }
@@ -198,7 +226,7 @@ async function main() {
 
   // --- 编译 ---
   const good = await req(`/api/projects/${pid}/compile`, { method: 'POST', body: JSON.stringify({ force: true }) });
-  check('强制编译成功', good.data?.ok === true, `${good.data?.ms} ms / ${good.data?.engine}`);
+  check('强制编译成功', good.data?.ok === true, `${good.data?.ms} ms / ${good.data?.engine}${good.data?.ok ? '' : ' / ' + good.data?.errors?.[0]?.message}`);
   check('编译结果带有发起人', typeof good.data?.by === 'string', good.data?.by);
 
   const cached = await req(`/api/projects/${pid}/compile`, { method: 'POST', body: '{}' });
@@ -248,6 +276,49 @@ async function main() {
     `${lenBefore} -> ${lenAfter} 字符`);
   ydoc.destroy();
 
+  // Invalid collaboration input must never take down the HTTP server.
+  check('协同拒绝越界路径', await wsAccess(`${WS_BASE}/collab/${encodeURIComponent(`${pid}::../escape.tex`)}?token=${wsToken}`) === 'denied');
+  check('协同拒绝不存在的文件', await wsAccess(`${WS_BASE}/collab/${pid}::missing.tex?token=${wsToken}`) === 'denied');
+  const malformedClose = await new Promise((resolve) => {
+    const ws = new WebSocket(collabUrl, { headers: { Cookie: 'broken=%ZZ' } });
+    const timer = setTimeout(() => { ws.terminate(); resolve(null); }, 5000);
+    ws.on('open', () => ws.send(Buffer.from([0])));
+    ws.on('close', (code) => { clearTimeout(timer); resolve(code); });
+    ws.on('error', () => { clearTimeout(timer); resolve(null); });
+  });
+  check('损坏 Cookie 与协同消息不会导致崩溃', malformedClose === 1003 && (await req('/api/auth/me')).status === 200);
+
+  // Keep a room open while renaming/deleting a directory, including unsaved edits.
+  await req(`/api/projects/${pid}/file`, { method: 'POST', body: JSON.stringify({ path: 'draft/note.tex', content: 'before' }) });
+  const draft = new Y.Doc();
+  const draftWs = await openYjs(`${WS_BASE}/collab/${pid}::draft/note.tex?token=${wsToken}`, draft);
+  draft.getText('content').insert(draft.getText('content').length, ' pending');
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, 0);
+  syncProtocol.writeUpdate(enc, Y.encodeStateAsUpdate(draft));
+  draftWs.send(encoding.toUint8Array(enc));
+  await sleep(100);
+  check('文件夹不能移入自身', (await req(`/api/projects/${pid}/rename`, { method: 'POST', body: JSON.stringify({ from: 'draft', to: 'draft/child' }) })).status === 400);
+  const renamed = await req(`/api/projects/${pid}/rename`, { method: 'POST', body: JSON.stringify({ from: 'draft', to: 'renamed' }) });
+  await sleep(1000);
+  check('协同重命名保留未落盘内容', renamed.status === 200 && (await req(`/api/projects/${pid}/file?path=renamed/note.tex`)).data?.content === 'before pending');
+  check('重命名后旧路径不会复活', (await req(`/api/projects/${pid}/file?path=draft/note.tex`)).status === 404);
+  draftWs.terminate();
+  draft.destroy();
+  const deletedDoc = new Y.Doc();
+  const deletedWs = await openYjs(`${WS_BASE}/collab/${pid}::renamed/note.tex?token=${wsToken}`, deletedDoc);
+  await req(`/api/projects/${pid}/file?path=renamed`, { method: 'DELETE' });
+  await sleep(1000);
+  check('协同删除后文件不会复活', (await req(`/api/projects/${pid}/file?path=renamed/note.tex`)).status === 404);
+  deletedWs.terminate();
+  deletedDoc.destroy();
+
+  // Both main files exist before compiling: only the selected entry changes.
+  await req(`/api/projects/${pid}/file`, { method: 'POST', body: JSON.stringify({ path: 'alternate.tex', content: '\\documentclass{article}\n\\begin{document}Alternate\\end{document}\n' }) });
+  await req(`/api/projects/${pid}/compile`, { method: 'POST', body: JSON.stringify({ mainFile: 'main.tex' }) });
+  const alternate = await req(`/api/projects/${pid}/compile`, { method: 'POST', body: JSON.stringify({ mainFile: 'alternate.tex' }) });
+  check('切换主文件不复用错误 PDF 缓存', alternate.data?.ok && !alternate.data?.cached && alternate.data?.pdf?.includes('alternate.pdf'));
+
   // --- 错误诊断 ---
   await req(`/api/projects/${pid}/file?path=${rel}`, {
     method: 'PUT', body: JSON.stringify({ content: '\\documentclass{article}\n\\begin{document}\n\\undefinedcmd\n\\end{document}\n' }),
@@ -259,6 +330,13 @@ async function main() {
   // --- 宏包选项冲突（Option clash）诊断 / 检测 / 一键修复 ---
   // 构造真实冲突：自定义 .cls 先以 [prologue] 加载 xcolor，主文件再以 [table] 加载
   // 复刻 acmart 场景：文档类先以 [prologue] 加载 xcolor，主文件再以 [table] 加载
+  // Use a classic package fixture: newer xcolor releases accept late options.
+  await req(`/api/projects/${pid}/file`, {
+    method: 'POST', body: JSON.stringify({
+      path: 'xcolor.sty', type: 'file',
+      content: '\\ProvidesPackage{xcolor}\n\\DeclareOption{prologue}{}\n\\DeclareOption{table}{}\n\\ProcessOptions\\relax\n\\endinput\n',
+    }),
+  });
   await req(`/api/projects/${pid}/file`, {
     method: 'POST', body: JSON.stringify({
       path: 'myclass.cls', type: 'file',
@@ -274,7 +352,7 @@ async function main() {
   const clashErr = (clashCompile.data?.errors || []).find((e) => e.code === 'option-clash');
   check('Option clash 编译报错被识别', clashCompile.data?.ok === false
     && (clashCompile.data?.errors || []).some((e) => /Option clash for package xcolor/i.test(e.message || '')),
-    (clashCompile.data?.errors || [])[0]?.message);
+    (clashCompile.data?.errors || [])[0]?.message || JSON.stringify({ ok: clashCompile.data?.ok, ms: clashCompile.data?.ms, log: clashCompile.data?.log?.slice(0, 1800) }));
   check('Option clash 带可操作建议', !!clashErr?.hint && clashErr.package === 'xcolor', clashErr?.package);
 
   const checked = await req(`/api/projects/${pid}/clashes`);
@@ -697,7 +775,7 @@ async function main() {
     const firstPass = dl.findIndex((l) => l.includes('PassOptionsToPackage'));
     const firstDoc = dl.findIndex((l) => /^\\documentclass/.test(l));
     check('拼接文档：声明位于第一份 documentclass 之前', firstPass >= 0 && firstPass < firstDoc, `${firstPass} < ${firstDoc}`);
-    check('拼接文档：自动修复块只剩一份', dl.filter((l) => l.includes('LaTeXStudio:')).length === 1);
+    check('拼接文档：兼容旧品牌且修复块只剩一份', dl.filter((l) => /LaTeXStudio:|underoot:/.test(l)).length === 1);
     check('拼接文档：修复后无冲突', (await req(`/api/projects/${did}/clashes`)).data?.clashes?.length === 0);
   }
 

@@ -144,7 +144,7 @@ function isPassword(value) {
   if (COMMON_PASSWORDS.has(lower)) return false;
   return true;
 }
-const passwordHint = `密码需 ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} 位，至少包含 3 类不同字符，且不能是常见弱口令`;
+const passwordHint = `密码需 ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} 位，至少包含 3 个不同字符，且不能是常见弱口令`;
 
 /** 账号创建后的响应：需要审批时不下发会话 */
 function respondCreated(res, req, row) {

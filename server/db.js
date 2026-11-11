@@ -134,6 +134,47 @@ const projectColumns = db.prepare('PRAGMA table_info(projects)').all();
 if (!projectColumns.some((c) => c.name === 'engine')) {
   db.exec('ALTER TABLE projects ADD COLUMN engine TEXT');
 }
+for (const [name, type] of [['active_branch', 'TEXT'], ['collab_epoch', 'INTEGER NOT NULL DEFAULT 0']]) {
+  if (!projectColumns.some((c) => c.name === name)) db.exec(`ALTER TABLE projects ADD COLUMN ${name} ${type}`);
+}
+for (const [table, columns] of Object.entries({
+  comments: [['assignee_id', 'TEXT'], ['priority', "TEXT NOT NULL DEFAULT 'normal'"]],
+  comment_replies: [['reply_to', 'TEXT'], ['updated_at', 'INTEGER']],
+})) {
+  const existing = db.prepare(`PRAGMA table_info(${table})`).all();
+  for (const [name, type] of columns) if (!existing.some((c) => c.name === name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+}
+db.exec(`
+CREATE TABLE IF NOT EXISTS project_branches (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, head TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id,name)
+);
+CREATE TABLE IF NOT EXISTS project_revisions (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  branch_id TEXT NOT NULL, parent_id TEXT, title TEXT NOT NULL, manifest TEXT NOT NULL,
+  main_file TEXT NOT NULL, engine TEXT, author_id TEXT, kind TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_revisions_project ON project_revisions(project_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS assistant_suggestions (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending', payload TEXT NOT NULL, created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL, actor_id TEXT
+);
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  comment_id TEXT NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+  message TEXT NOT NULL, is_read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id,is_read,created_at DESC);
+`);
+if (!db.prepare('PRAGMA table_info(project_revisions)').all().some((c) => c.name === 'merge_parent_id')) {
+  db.exec('ALTER TABLE project_revisions ADD COLUMN merge_parent_id TEXT');
+}
+
+let versionHook = () => {};
+export function onVersionRecorded(hook) { versionHook = hook; }
 
 
 /** 站点级设置：读取（无记录时返回 null） */
@@ -309,6 +350,7 @@ export function recordVersion({ projectId, path, content, authorId = null, force
   db.prepare(`DELETE FROM versions WHERE project_id = ? AND path = ? AND id NOT IN
     (SELECT id FROM versions WHERE project_id = ? AND path = ? ORDER BY created_at DESC LIMIT ?)`)
     .run(projectId, path, projectId, path, keep);
+  versionHook(projectId, authorId);
   return id;
 }
 
@@ -351,6 +393,8 @@ function commentJson(row, replies) {
     page: row.page == null ? null : Number(row.page),
     rect,
     resolved: !!row.resolved,
+    assigneeId: row.assignee_id || null,
+    priority: row.priority || 'normal',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     replies,
@@ -374,6 +418,8 @@ function repliesFor(commentIds) {
       authorName: r.author_name || '已删除用户',
       authorColor: r.author_color || null,
       body: r.body,
+      replyTo: r.reply_to || null,
+      updatedAt: r.updated_at || r.created_at,
       createdAt: r.created_at,
     });
   }
@@ -412,10 +458,10 @@ export function createComment({ projectId, authorId, body, anchorType, path, fro
   return getComment(projectId, id);
 }
 
-export function addReply({ projectId, commentId, authorId, body }) {
+export function addReply({ projectId, commentId, authorId, body, replyTo = null }) {
   if (!getComment(projectId, commentId)) return null;
-  db.prepare('INSERT INTO comment_replies (id, comment_id, author_id, body, created_at) VALUES (?,?,?,?,?)')
-    .run(crypto.randomUUID(), commentId, authorId, body, Date.now());
+  db.prepare('INSERT INTO comment_replies (id, comment_id, author_id, body, created_at, reply_to) VALUES (?,?,?,?,?,?)')
+    .run(crypto.randomUUID(), commentId, authorId, body, Date.now(), replyTo);
   db.prepare('UPDATE comments SET updated_at = ? WHERE id = ?').run(Date.now(), commentId);
   return getComment(projectId, commentId);
 }

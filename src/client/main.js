@@ -34,7 +34,7 @@ async function render() {
   const { path, query } = parseHash();
 
   if (!currentUser) {
-    document.title = '登录 · LaTeXStudio';
+    document.title = '登录 · underoot';
 
     renderAuth(app, {
       notice: '',
@@ -50,7 +50,7 @@ async function render() {
 
   // 初始密码 / 管理员重置过的密码，先改密再进系统
   if (currentUser.mustChangePassword) {
-    document.title = '修改密码 · LaTeXStudio';
+    document.title = '修改密码 · underoot';
     renderForcePassword(app, {
       user: currentUser,
       onDone: (user) => { currentUser = user; render(); },
@@ -69,7 +69,7 @@ async function render() {
       render();
       return;
     }
-    document.title = '账号审批 · LaTeXStudio';
+    document.title = '账号审批 · underoot';
     cleanup = renderAdmin(app, {
       user: currentUser,
       onExit: () => { location.hash = '#/'; },
@@ -79,18 +79,19 @@ async function render() {
 
   const projectMatch = path.match(/^\/p\/([A-Za-z0-9-]+)/);
   if (projectMatch) {
-    document.title = '编辑器 · LaTeXStudio';
+    document.title = '编辑器 · underoot';
     const fn = await renderEditor(app, projectMatch[1], {
       user: currentUser,
       onExit: () => { location.hash = '#/'; },
       onUserUpdate: (u) => { currentUser = u; },
+      initialLocation: Object.fromEntries(query),
     });
     if (token !== renderToken) { if (typeof fn === 'function') fn(); return; }
     cleanup = fn;
     return;
   }
 
-  document.title = 'LaTeXStudio · 在线 LaTeX 编辑器';
+  document.title = 'underoot · 协作研究平台';
   cleanup = renderDashboard(app, {
     user: currentUser,
     onLogout: () => {

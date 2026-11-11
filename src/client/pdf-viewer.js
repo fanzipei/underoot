@@ -191,6 +191,34 @@ export function createPdfViewer(host, { emptyEl = null, onState = () => {}, onPa
 
   return {
     load,
+    async getRegionContext(pageNumber, rect) {
+      if (!pdf) throw new Error('请先编译并显示 PDF');
+      const document = pdf;
+      const page = await document.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 1 });
+      const text = await page.getTextContent();
+      const selected = text.items.filter((item) => {
+        if (!item.str) return false;
+        const point = pdfjsLib.Util.transform(viewport.transform, item.transform);
+        const x = point[4] / viewport.width;
+        const y = point[5] / viewport.height;
+        const w = item.width / viewport.width;
+        const h = (item.height || 10) / viewport.height;
+        return x + w >= rect.x && x <= rect.x + rect.w && y >= rect.y && y - h <= rect.y + rect.h;
+      }).map((item) => item.str).join(' ');
+      const canvas = pages.querySelector(`.pdf-page[data-page="${pageNumber}"] canvas`);
+      let image = null;
+      if (canvas) {
+        const crop = window.document.createElement('canvas');
+        const sourceWidth = Math.max(1, canvas.width * rect.w);
+        const sourceHeight = Math.max(1, canvas.height * rect.h);
+        const scale = Math.min(1, 1400 / Math.max(sourceWidth, sourceHeight));
+        crop.width = Math.max(1, Math.round(sourceWidth * scale)); crop.height = Math.max(1, Math.round(sourceHeight * scale));
+        crop.getContext('2d').drawImage(canvas, canvas.width * rect.x, canvas.height * rect.y, sourceWidth, sourceHeight, 0, 0, crop.width, crop.height);
+        image = crop.toDataURL('image/png');
+      }
+      return { text: selected, image, page: pageNumber, rect };
+    },
     setZoom,
     zoomBy,
     getZoom: () => zoom,

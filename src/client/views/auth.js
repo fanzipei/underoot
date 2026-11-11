@@ -18,7 +18,7 @@ export function renderAuth(root, { onSuccess, initialMode = 'login', preset = {}
     <div class="auth-wrap">
       <section class="auth-hero">
         <div class="auth-brand">
-          <span class="mark">T</span><span>LaTeXStudio</span>
+          <span class="mark" aria-label="underoot"><svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 17l4-2 5 10 6-18h8" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" /></svg></span><span>underoot</span>
         </div>
         <div class="auth-showcase">
           <div class="code-peek">
@@ -72,7 +72,7 @@ export function renderAuth(root, { onSuccess, initialMode = 'login', preset = {}
         </div>
         <div class="field">
           <label for="password">密码</label>
-          <input class="input" id="password" name="password" type="password" placeholder="至少 8 位，含 3 类以上字符" autocomplete="${mode === 'register' ? 'new-password' : 'current-password'}" required value="${escapeHtml(preset.password || '')}" />
+          <input class="input" id="password" name="password" type="password" placeholder="8–64 位，至少 3 个不同字符" autocomplete="${mode === 'register' ? 'new-password' : 'current-password'}" required value="${escapeHtml(preset.password || '')}" />
         </div>
         <button class="btn btn-primary" type="submit" id="auth-submit">
           ${mode === 'login' ? '登录' : '提交注册申请'}
