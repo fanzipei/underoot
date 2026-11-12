@@ -25,7 +25,8 @@ const env = {
   LATEXSTUDIO_ADMIN_PASSWORD: crypto.randomBytes(24).toString('base64url'),
 };
 const research = process.argv.includes('--research');
-if (research) env.LATEXSTUDIO_AI_ALLOW_LOCAL = '1'; // Disposable mock API only, never changes production config.
+const platform = process.argv.includes('--platform');
+if (research || platform) env.LATEXSTUDIO_AI_ALLOW_LOCAL = '1'; // Disposable mock API only, never changes production config.
 env.ADMIN_PASSWORD = env.LATEXSTUDIO_ADMIN_PASSWORD;
 const log = fs.openSync(path.join(data, 'server.log'), 'w', 0o600);
 const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
@@ -43,7 +44,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (!ready) throw new Error('测试服务启动超时');
-  const suite = spawn(process.execPath, [research ? 'scripts/research-test.mjs' : 'scripts/smoke-test.mjs'], { cwd: root, env, windowsHide: true, stdio: 'inherit' });
+  const suite = spawn(process.execPath, [platform ? 'scripts/platform-test.mjs' : research ? 'scripts/research-test.mjs' : 'scripts/smoke-test.mjs'], { cwd: root, env, windowsHide: true, stdio: 'inherit' });
   const [code] = await once(suite, 'exit');
   process.exitCode = code ?? 1;
 } finally {

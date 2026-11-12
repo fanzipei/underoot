@@ -74,6 +74,10 @@ All methods are asynchronous; failures reject with `Error.message`. At most thre
 | `storage.get(key)` | `storage` | JSON value or null; scoped to plugin and user |
 | `storage.set(key,value)` | `storage` | `{ok:true}`; key ≤100 characters, JSON value ≤64,000 characters, ≤64 keys per plugin/user |
 | `notify(message)` | none | Bounded host toast prefixed with the plugin's name |
+| `documents.list()` | `documents.read` | `{files:[path]}`; Markdown / TeX files in the current project |
+| `documents.read(path)` | `documents.read` | `{path,content,hash}`; at most 150 KB |
+| `documents.write({path,content,hash})` | `documents.write` | Author confirmation for each save; owner/editor only; null hash creates a new file, an existing SHA-256 hash replaces only that exact version; snapshots and CRDT sync preserved |
+| `documents.convert({from,content})` | `documents.convert` | `from` is `markdown` or `tex`; returns `{content,extension,warnings}` via sandboxed local Pandoc; does not save or overwrite anything |
 
 Read-only members cannot invoke models, add comments or propose edits; reviewers may propose and discuss but cannot apply changes. AI calls are limited to one per plugin/user per 10 seconds. `images` accepts at most two PNG/JPEG base64 data URLs, each ≤2.5 million characters, total request ≤3.2 million characters; the configured model must have vision enabled. Ordinary arguments are limited to 200,000 characters. Keep scientific prompts smaller and state uncertainty rather than fabricate a source.
 

@@ -1,5 +1,12 @@
 # 依赖
 node_modules/
+.cache/
+extensions/builtin/underoot.markdown/plugin.js
+extensions/builtin/underoot.markdown/katex.min.css
+extensions/builtin/underoot.markdown/fonts/
+examples/plugins/markdown/
+public/wasm/texlive/
+public/wasm/texlive-index.json
 
 # 运行时数据（数据库、会话密钥、管理员初始密码、用户项目文件）
 data/

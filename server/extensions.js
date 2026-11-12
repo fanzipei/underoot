@@ -13,6 +13,7 @@ import { callModel, aiConfig } from './ai-service.js';
 import { storePluginSuggestion, suggestions } from './assistant.js';
 import { notifyDiscussion } from './discussions.js';
 import { broadcastAllProjects, broadcastProject, flushProject } from './collab.js';
+import { readDocument, writeDocument, convertDocument } from './documents.js';
 
 const EXT_DIR = path.join(DATA_DIR, 'extensions');
 const BUILTIN_DIR = path.join(ROOT, 'extensions', 'builtin');
@@ -105,14 +106,15 @@ extensionsRouter.get('/:id/download', handle((req, res) => {
   res.type('application/zip').send(zip.toBuffer());
 }));
 extensionsRouter.get('/examples/:name/download', handle((req, res) => {
-  if (!['selection-notes', 'ai-claims'].includes(req.params.name)) throw failure(404, '示例不存在');
+  if (!['selection-notes', 'ai-claims', 'markdown'].includes(req.params.name)) throw failure(404, '示例不存在');
   const zip = new AdmZip(); zip.addLocalFolder(path.join(ROOT, 'examples', 'plugins', req.params.name));
   res.type('application/zip').set('Content-Disposition', `attachment; filename="${req.params.name}.zip"`).send(zip.toBuffer());
 }));
 
 const methodPermission = { 'project.read': 'project.read', 'selection.read': 'selection.read', 'pdf.read': 'pdf.read',
   'ai.complete': 'ai.invoke', 'suggestions.propose': 'suggestions.propose', 'comments.list': 'comments.read', 'comments.add': 'comments.write',
-  'storage.get': 'storage', 'storage.set': 'storage', 'ui.notify': null };
+  'storage.get': 'storage', 'storage.set': 'storage', 'ui.notify': null,
+  'documents.read': 'documents.read', 'documents.write': 'documents.write', 'documents.convert': 'documents.convert' };
 const calls = new Map();
 extensionsRouter.post('/:id/rpc', handle(async (req, res) => {
   const { manifest } = installed(req.params.id);
@@ -130,9 +132,18 @@ extensionsRouter.post('/:id/rpc', handle(async (req, res) => {
     role = project && memberRole(project.id, req.user.id);
     if (!project || !role) throw failure(403, '插件只能访问用户有权限的当前项目');
     if (['suggestions.propose','comments.add','ai.complete'].includes(method) && role === 'viewer') throw failure(403, '只读成员不能执行此插件操作');
+    if (method === 'documents.write' && !['owner','editor'].includes(role)) throw failure(403, '需要文档编辑权限');
   }
   let result;
-  if (method === 'project.read') {
+  if (method === 'documents.read') {
+    if (args.path) result = readDocument(project, args.path);
+    else { flushProject(project.id); result = { files: sourceFiles(project).filter((f) => /\.(md|markdown|tex)$/i.test(f.path)).map((f) => f.path) }; }
+  } else if (method === 'documents.write') {
+    if (req.body.consent !== true) throw failure(400, '保存文档需要作者确认');
+    result = writeDocument(project, req.user.id, args);
+  } else if (method === 'documents.convert') {
+    result = await convertDocument(args);
+  } else if (method === 'project.read') {
     flushProject(project.id); let remaining = 100000;
     const files = sourceFiles(project).filter((f) => /\.(tex|bib)$/i.test(f.path)).map((f) => {
       const content = f.buffer.toString('utf8').slice(0, remaining); remaining -= content.length; return { path: f.path, content };
@@ -191,9 +202,9 @@ export const extensionAssets = express.Router();
 extensionAssets.get('/sdk.js', (_req, res) => res.type('application/javascript').sendFile(path.join(ROOT, 'public', 'extension-sdk.js')));
 extensionAssets.get('/:id/:version/*', handle((req, res) => {
   const { row } = installed(req.params.id);
-  if (row.builtin || row.version !== req.params.version) throw failure(404, '插件资源不存在');
+  if (JSON.parse(row.manifest).runtime !== 'iframe' || row.version !== req.params.version) throw failure(404, '插件资源不存在');
   const rel = extensionPath(req.params[0]);
-  const full = resolveInside(path.join(extensionDir(row.id), row.version), rel);
+  const full = resolveInside(row.builtin ? path.join(BUILTIN_DIR, row.id) : path.join(extensionDir(row.id), row.version), rel);
   res.removeHeader('X-Frame-Options');
   res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'");
   res.setHeader('Cache-Control', 'no-store'); res.sendFile(full);

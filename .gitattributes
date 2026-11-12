@@ -8,3 +8,6 @@
 *.gif binary
 *.pdf binary
 *.ico binary
+*.wasm binary
+*.fmt binary
+*.zip binary

@@ -12,14 +12,14 @@ import { flushProject, syncExternalWrite, broadcastProject } from './collab.js';
 
 const CONFIG = 'assistant_config_v1';
 const encryptionKey = () => crypto.createHash('sha256').update(process.env.LATEXSTUDIO_SECRET || fs.readFileSync(path.join(DATA_DIR, 'secret.key'))).digest();
-function seal(value) {
+export function seal(value) {
   if (!value) return '';
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey(), iv);
   const body = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
   return [iv, cipher.getAuthTag(), body].map((v) => v.toString('base64')).join('.');
 }
-function unseal(value) {
+export function unseal(value) {
   if (!value) return '';
   try {
     const [iv, tag, body] = value.split('.').map((v) => Buffer.from(v, 'base64'));
@@ -39,10 +39,10 @@ function privateAddress(address) {
     || (parts[0] === 169 && parts[1] === 254) || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
     || (parts[0] === 192 && parts[1] === 168) || (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127);
 }
-export async function validateEndpoint(value, { allowQuery = false } = {}) {
+export async function validateEndpoint(value, { allowQuery = false, allowLocal = process.env.LATEXSTUDIO_AI_ALLOW_LOCAL === '1' } = {}) {
   let url;
   try { url = new URL(value); } catch { throw failure(400, '请填写有效的 API Base URL'); }
-  const localAllowed = process.env.LATEXSTUDIO_AI_ALLOW_LOCAL === '1';
+  const localAllowed = allowLocal;
   if (url.username || url.password || (!allowQuery && url.search) || url.hash || (!localAllowed && url.protocol !== 'https:')
     || !['https:', 'http:'].includes(url.protocol)) throw failure(400, 'API 地址必须为 HTTPS，且不能含账号、查询参数或片段');
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
@@ -53,24 +53,25 @@ export async function validateEndpoint(value, { allowQuery = false } = {}) {
 }
 
 /** Pin validated DNS records and reject redirects; never forward credentials to a redirect. */
-export async function remoteJSON(rawUrl, { body, key, timeout = 90000 } = {}) {
-  const { url, records } = await validateEndpoint(rawUrl, { allowQuery: true });
+export async function remoteJSON(rawUrl, { body, key, timeout = 90000, method, allow404 = false, maxResponse = 2 * 1024 * 1024, allowLocal } = {}) {
+  const { url, records } = await validateEndpoint(rawUrl, { allowQuery: true, allowLocal });
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
     const req = (url.protocol === 'https:' ? https : http).request(url, {
-      method: body ? 'POST' : 'GET', agent: false,
+      method: method || (body ? 'POST' : 'GET'), agent: false,
       lookup: (_host, options, callback) => options.all ? callback(null, records) : callback(null, records[0].address, records[0].family),
       headers: { Accept: 'application/json', 'User-Agent': 'underoot/0.2', ...(key ? { Authorization: `Bearer ${key}` } : {}),
         ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}) },
     }, (response) => {
+      if (allow404 && response.statusCode === 404) { response.resume(); resolve(null); return; }
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        response.resume(); reject(failure(502, `模型或文献服务返回 HTTP ${response.statusCode}，请检查地址、模型及密钥`)); return;
+        response.resume(); reject(failure(response.statusCode === 409 || response.statusCode === 422 ? 409 : 502, `远程服务返回 HTTP ${response.statusCode}，请检查权限、配置或远端分支是否已变化`)); return;
       }
       let size = 0;
       const chunks = [];
       response.on('data', (chunk) => {
         size += chunk.length;
-        if (size > 2 * 1024 * 1024) req.destroy(failure(502, '服务响应超过 2 MB 上限'));
+        if (size > maxResponse) req.destroy(failure(502, '服务响应超过大小上限'));
         else chunks.push(chunk);
       });
       response.on('error', () => reject(failure(502, '服务响应中断')));

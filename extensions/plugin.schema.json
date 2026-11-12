@@ -11,7 +11,7 @@
     "apiVersion": {"const":1}, "runtime": {"const":"iframe"},
     "entry": {"type":"string", "pattern":"^[^\\\\:]+\\.html$", "maxLength":180},
     "description": {"type":"string", "maxLength":500}, "author": {"type":"string", "maxLength":100}, "license": {"type":"string", "maxLength":80},
-    "permissions": {"type":"array", "uniqueItems":true, "items":{"enum":["project.read","selection.read","pdf.read","ai.invoke","suggestions.propose","comments.read","comments.write","storage"]}},
+    "permissions": {"type":"array", "uniqueItems":true, "items":{"enum":["project.read","selection.read","pdf.read","ai.invoke","suggestions.propose","comments.read","comments.write","storage","documents.read","documents.write","documents.convert"]}},
     "contributes": {"type":"object", "required":["commands"], "properties":{"commands":{"type":"array", "minItems":1,"maxItems":12,"items":{"type":"object","required":["id","title"],"properties":{"id":{"type":"string"},"title":{"type":"string","minLength":1,"maxLength":80},"when":{"enum":["editor","workspace","all"]}},"additionalProperties":false}}},"additionalProperties":false}
   },
   "additionalProperties": false

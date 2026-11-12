@@ -12,11 +12,11 @@ import { config } from './config.js';
 
 const CSP_DIRECTIVES = [
   "default-src 'self'",
-  "script-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' ws: wss:",
+  "connect-src 'self' blob: ws: wss:",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",

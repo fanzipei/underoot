@@ -3,6 +3,8 @@ import { EditorState, Compartment, EditorSelection } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { syntaxHighlighting, HighlightStyle, StreamLanguage, bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language';
 import { stex } from '@codemirror/legacy-modes/mode/stex';
+import { openGitSync } from '../git-sync.js';
+import { BrowserTeX } from '../wasm-compiler.js';
 import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/autocomplete';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { lineNumbers, highlightActiveLineGutter, highlightActiveLine } from '@codemirror/view';
@@ -179,7 +181,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     const data = await api.get(`/api/projects/${projectId}`);
     project = data.project;
     tree = data.tree;
-    engines = Array.isArray(data.engines) ? data.engines : [];
+    engines = [...(Array.isArray(data.engines) ? data.engines : []), { id: 'wasm-pdftex', name: '本地 WASM · pdfLaTeX（基础宏包）', kind: 'browser' }];
     initialIssues = Array.isArray(data.issues) && data.issues.length
       ? data.issues
       : (Array.isArray(data.clashes) ? data.clashes.map((c) => ({ title: `宏包选项冲突：${c.pkg}`, hint: c.hint, code: 'option-clash' })) : []);
@@ -203,6 +205,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   let activePath = null;
   let docs = new Map(); // path -> {doc, provider, ytext, undo}
   let compiling = false;
+  const browserTeX = new BrowserTeX(); let browserPdf = null;
   let changingEngine = false;
   const canEdit = ['owner', 'editor'].includes(project.role);
   let extensionList = await loadExtensions();
@@ -844,7 +847,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }
 
   async function compile(manual = false) {
-    if (!canEdit) {
+    if (!canEdit && project.engine !== 'wasm-pdftex') {
       const output = baseName(project.mainFile).replace(/\.[^.]+$/, '') + '.pdf';
       if (findFile(tree, output)) showPdf(`/api/projects/${projectId}/pdf?file=${encodeURIComponent(output)}`);
       return;
@@ -854,7 +857,16 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     setCompileBusy(true);
     if (manual && pdfVisible) showPdfLoading();
     try {
-      const res = await api.post(`/api/projects/${projectId}/compile`, {
+      let res;
+      if (project.engine === 'wasm-pdftex') {
+        const payload = await api.get(`/api/workspace/projects/${projectId}/browser-files`);
+        if (activePath && docs.has(activePath)) {
+          const file = payload.files.find((f) => f.path === activePath);
+          if (file) file.content = view.state.doc.toString();
+        }
+        res = await browserTeX.compile(project.mainFile, payload.files);
+        if (res.ok) { if (browserPdf) URL.revokeObjectURL(browserPdf); browserPdf = res.pdf; }
+      } else res = await api.post(`/api/projects/${projectId}/compile`, {
         mainFile: project.mainFile,
         force: !!manual,
       });
@@ -1087,6 +1099,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         toast(autoCompile ? '已开启自动编译' : '已关闭自动编译');
       } },
       ...engineItems,
+      ...(canEdit ? [{ key: 'git-sync', label: 'GitHub / GitLab 版本同步', icon: 'history', onClick: () => openGitSync(project) }] : []),
       { key: 'zip', label: '下载项目 ZIP', icon: 'download', onClick: () => {
         window.location.href = `/api/projects/${projectId}/download`;
       } },
@@ -1346,7 +1359,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     return () => {
       if (!autoCompile) return;
       clearTimeout(timer);
-      timer = setTimeout(() => compile(false), 1800);
+      timer = setTimeout(() => compile(false), project.engine === 'wasm-pdftex' ? 650 : 1800);
     };
   })();
   // 只有本地键入触发自动编译；远程同步的改动由项目事件通道统一广播编译结果，避免每人各编译一次
@@ -1400,6 +1413,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }, 300);
 
   return () => {
+    browserTeX.destroy(); if (browserPdf) URL.revokeObjectURL(browserPdf);
     window.removeEventListener('keydown', keyHandler);
     eventClosed = true;
     try { comments?.destroy(); } catch { /* ignore */ }

@@ -11,6 +11,9 @@ export const EXTENSION_PERMISSIONS = {
   'comments.read': '读取当前项目评论与回复',
   'comments.write': '以当前用户身份添加评论',
   'storage': '保存该用户在此插件中的设置',
+  'documents.read': '读取当前项目的 Markdown / TeX 文档',
+  'documents.write': '经作者逐次确认后保存文档（版本冲突保护）',
+  'documents.convert': '使用本地 Pandoc 转换 Markdown / TeX，不调用模型',
 };
 const bad = (message) => Object.assign(new Error(message), { status: 400 });
 export const packageDigest = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
@@ -28,7 +31,7 @@ export function validateManifest(value, { builtin = false } = {}) {
   if (value.apiVersion !== 1) throw bad('目前仅支持插件 API v1');
   if (!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*)?$/.test(value.version || '')) throw bad('插件版本需为语义化版本，如 1.0.0');
   if (typeof value.name !== 'string' || !value.name.trim() || value.name.length > 80) throw bad('插件名称需为 1–80 个字符');
-  const runtime = builtin ? 'builtin' : 'iframe';
+  const runtime = builtin && value.runtime !== 'iframe' ? 'builtin' : 'iframe';
   if (!builtin && value.runtime && value.runtime !== 'iframe') throw bad('第三方插件仅支持 iframe 运行时，不执行服务器代码');
   const permissions = value.permissions || [];
   if (!Array.isArray(permissions) || permissions.length > 12 || permissions.some((permission) => !Object.hasOwn(EXTENSION_PERMISSIONS, permission))) throw bad('插件包含未支持的权限');

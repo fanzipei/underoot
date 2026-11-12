@@ -9,6 +9,7 @@ import { aiConfig, saveAiConfig, testAi, review, suggestions, decideSuggestion, 
 import { deriveProject, retarget } from './derive.js';
 import { editReply } from './discussions.js';
 import { flushProject } from './collab.js';
+import { gitConfig, saveGitConfig, syncGit } from './git-sync.js';
 
 export const workspaceRouter = express.Router();
 workspaceRouter.use(requireAuth);
@@ -43,6 +44,16 @@ workspaceRouter.use('/projects/:id', (req, res, next) => {
 const editor = (req, _res, next) => ['owner', 'editor'].includes(req.role) ? next() : next(failure(403, '需要项目编辑权限'));
 const reviewer = (req, _res, next) => req.role !== 'viewer' ? next() : next(failure(403, '只读成员不能提交审阅'));
 const prefix = '/projects/:id';
+workspaceRouter.get(`${prefix}/git`, editor, (req, res) => res.json(gitConfig(req.project.id, req.user.id)));
+workspaceRouter.get(`${prefix}/browser-files`, handle((req, res) => {
+ flushProject(req.project.id);
+ const files = sourceFiles(req.project);
+ if (files.length > 500 || files.reduce((n,f) => n+f.buffer.length, 0) > 10*1024*1024) throw failure(413, '浏览器编译限 500 个文件、总计 10 MB；较大项目请用服务器编译');
+ res.json({ files: files.map((f) => ({ path: f.path, base64: f.buffer.toString('base64') })) });
+}));
+workspaceRouter.put(`${prefix}/git`, editor, handle(async (req, res) => res.json(await saveGitConfig(req.project.id, req.user.id, req.body || {}))));
+workspaceRouter.post(`${prefix}/git/preview`, editor, handle(async (req, res) => res.json(await syncGit(req.project, req.user.id))));
+workspaceRouter.post(`${prefix}/git/push`, editor, handle(async (req, res) => res.json(await syncGit(req.project, req.user.id, { ...req.body, push: true }))));
 
 workspaceRouter.get(`${prefix}/history`, handle((req, res) => res.json(history(req.project.id))));
 workspaceRouter.post(`${prefix}/history`, editor, handle((req, res) => res.json({ revision: snapshot(req.project.id, req.user.id, req.body?.title || '手动检查点', 'checkpoint', true) })));

@@ -27,6 +27,8 @@
     getPdfSelection: () => request('pdf.read'), complete: (input) => request('ai.complete', input),
     propose: (suggestion) => request('suggestions.propose', suggestion), getComments: () => request('comments.list'),
     addComment: (comment) => request('comments.add', comment), notify: (message) => request('ui.notify', { message }),
+    documents: Object.freeze({ list: () => request('documents.read'), read: (path) => request('documents.read', { path }),
+      write: (document) => request('documents.write', document), convert: (document) => request('documents.convert', document) }),
     storage: Object.freeze({ get: async (key) => (await request('storage.get', { key })).value,
       set: (key, value) => request('storage.set', { key, value }) }),
   });

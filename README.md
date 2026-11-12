@@ -392,10 +392,40 @@ underoot 把身份、项目权限、编辑协作、讨论、项目版本、密�
 - [JSON Schema](extensions/plugin.schema.json)：用于编辑器清单提示；安装以服务器 validator 为准。
 - 打包：`node scripts/pack-extension.mjs <发布目录> --check`；通过后用 `--out <插件.zip>` 生成安装包。
 
-HTML 加载 `/extensions/sdk.js` 后，可用 `underoot.getSelection()`、`getProject()`、`getPdfSelection()`、`complete()`、`propose()`、评论 API 和按用户隔离的 `storage`。插件拿不到模型密钥；模型调用由作者逐次确认。修改通过核心建议中心审阅后才写稿，并受版本和内容冲突保护。未声明的能力、跨项目越权和已停用插件的调用都会被拒绝。
+HTML 加载 `/extensions/sdk.js` 后，可用 `underoot.getSelection()`、`getProject()`、`getPdfSelection()`、`complete()`、`propose()`、评论 API 和按用户隔离的 `storage`。插件拿不到模型密钥；模型调用由作者逐次确认。建议通过核心建议中心审阅后才写稿；v0.3 的文档编辑插件也可声明 `documents.write`，经作者逐次确认后保存，受版本和内容冲突保护。未声明的能力、跨项目越权和已停用插件的调用都会被拒绝。
 
 第三方运行时没有 Node/Python、shell、宿主 DOM、Cookie、CDN 或直接网络访问；请先把前端依赖构建进发布目录。ZIP 上限为 10 MB、200 条目，解压总量 15 MB，禁止路径穿越、隐藏凭据目录和符号链接。插件源代码作为应用资源分发，勿把密钥或私有数据放进 ZIP；安装前仍需审查来源。本版不兼容 VS Code 扩展格式，尚未实现商店、签名、自动更新或任意服务器插件执行。
 
 完整平台回归使用临时数据目录和模拟模型，含 ZIP 检查/安装/运行、权限拒绝、插件启停、用户存储隔离、建议接受和卸载保留研究记录。另在实际浏览器验证了 ZIP 插件的隔离窗口、SDK 读取选区及提交建议。
 
 2026-11-12 验证：服务器研究/插件测试 **130/130**、原有回归 **137/137**；Windows 本地研究/插件测试 **128/128**（Linux 额外包含两项真实 TeX 编译）。skill 与示例包也通过各自校验。模型协议使用模拟服务测试，真实模型质量仍需管理员配置 API 后评估。
+
+## 十四、v0.3 Git 同步、本地 WASM 与 Markdown 插件
+
+### GitHub / GitLab 项目版本同步
+
+在项目左侧「更多 → GitHub / GitLab 版本同步」填写自己的 HTTPS 仓库地址、分支和 Token，保存后先预览变化，再填写提交说明、确认提交。GitHub 细粒度 Token 需要仓库 Contents 读写权限；GitLab PAT 需要 `api` 权限及仓库写入身份。创建仓库、Token、邀请成员等仍在服务商页面完成；underoot 不使用应用服务器自身的 GitHub 登录凭据代替用户授权。
+
+凭据按「用户 + 项目」隔离，以 AES-GCM 加密且不回显；更换仓库或分支会清除旧凭据。只允许项目所有者和编辑者操作。支持 GitHub.com、GitLab.com 和公网 HTTPS 自建 GitLab；内网/HTTP GitLab 需管理员明确设置 `UNDEROOT_GIT_ALLOW_LOCAL=1`，与模型的内网开关独立。网络层固定已校验 DNS、不跟随重定向。
+
+推送包含源码和素材，不含生成的主 PDF、编译中间产物、应用数据库或 `.env`。远端其他文件保留；仅删除之前由此连接同步且现已在本地删除的文件。首次上传替换同名文件会在预览标明。预览摘要和远端提交检查防止过期提交；GitHub 使用非强制 ref 更新，GitLab 更新/删除携带文件最后提交 ID。远端改过的论文文件会阻止推送，需要先人工合并，不提供强制覆盖、自动拉取或远端分支创建。非空仓库请先创建所选分支；空仓库可初始化（GitHub 首次通常分为初始化文件和批量文件两个提交，网络中断后重新预览续传）。
+
+每次提交前保留 underoot 检查点。上限为 500 个本地文件、20 MB、单文件 5 MB；每次最多 100 个文件变化。Git API 实现参考 [GitHub Git Trees / Refs](https://docs.github.com/en/rest/git/trees)、[GitLab 多文件提交 API](https://docs.gitlab.com/api/commits/)。
+
+### 浏览器本地 WASM 编译
+
+顶部项目编译器选择「本地 WASM · pdfLaTeX（基础宏包）」。引擎在 Web Worker 中运行，源码停笔约 650 ms 后自动重新编译并刷新 PDF；复用引擎，执行两遍以更新引用，可下载实际 PDF。项目文件从当前实例载入，正在编辑的源文档直接覆盖浏览器内存中的对应文件，无需等待协同落盘；本地 PDF 不上传、不替换服务器 PDF，也不广播给其他协作者。
+
+引擎、匹配的格式、基础宏包和字体均随项目分发，不调用外部编译服务或 SwiftLaTeX 资源网站。支持基础 article、数学、多文件和基本图形；10 MB / 500 文件上限。此基础包使用兼容的旧版 pdfTeX/LaTeX，并不等同于完整 TeX Live：现代会议模板、中文系统字体、XeTeX/LuaTeX 和额外宏包请选择原有服务器引擎。一次编译超过 45 秒会终止 Worker，避免页面卡死。浏览器需支持 WebAssembly，反向代理 CSP 应允许 `'wasm-unsafe-eval'`。第三方来源、源代码与许可证见 [`public/wasm/NOTICE.md`](public/wasm/NOTICE.md)。
+
+### Markdown 研究写作插件
+
+在「更多 → Markdown 编辑与 TeX 互转」打开内置隔离插件。支持新建/打开 `.md`、`.markdown`、`.tex`，Markdown 左侧源码、右侧实时渲染；包含标题、列表、表格、代码与 KaTeX 数学。写作草稿留在插件中，点「保存到项目」并确认后写入；保存检查原文件 SHA-256，协作者已修改时拒绝覆盖，并保留快照与协同同步。外部图片和原始 HTML 受限制，避免预览泄露未发表内容。
+
+一键双向转换使用本地 [Pandoc](https://pandoc.org/MANUAL.html)，不是模型调用；结果另存为 `*.converted.tex` / `*.converted.md`，已有同名文件会拒绝覆盖。Pandoc 以沙箱运行，不允许读取服务器任意文件。TeX 输出采用完整 Pandoc 模板、`ctexart`，可用服务器 XeLaTeX 编译。复杂自定义宏、模板布局和某些表格无法无损互转，需核对转换结果。单文档限 150 KB。
+
+首次部署运行 `node scripts/install-pandoc.mjs`，从官方发布下载固定 3.13 版、核验 SHA-256，安装到 `bin/`；也可将兼容 Pandoc 放入 PATH。普通构建不自动安装系统程序。插件 UI 由 `npm run build` 打包；便携版 `research.markdown` 可在插件中心下载 ZIP，或运行 `node scripts/pack-extension.mjs examples/plugins/markdown --out markdown.zip`。新增 `documents.read`、`documents.write`、`documents.convert` 权限及 SDK 标准已写入插件开发 skill。
+
+验证命令：`npm run test:git`（独立临时数据库、两家服务 API 协议模拟）、`npm run test:wasm`（执行实际 WASM 生成 PDF）、`npm run test:platform`（隔离服务、文档/权限/转换/浏览器资源）、`npm run test:isolated`、`npm run test:research`。所有测试均不使用生产数据库；没有替用户创建 Token 或推送私人论文。
+
+v0.3 验证结果：ws4090l 基础回归 141/141、研究工作流 130/130、Git 协议 46/46、新功能集成 36/36（含中文表格 TeX 实际编译）、真实 WASM 3/3，共 356 项通过；npm audit 为 0 项漏洞。在实际浏览器中另验证了 WASM PDF、Markdown 源码即时渲染、公式和表格、转换另存及 Git 配置入口。

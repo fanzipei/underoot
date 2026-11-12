@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import './build-tex-runtime.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outfile = path.join(root, 'public', 'assets', 'app.js');
@@ -110,6 +111,17 @@ assertCompatCoverage(WORKER_POLYFILL);
 copyPdfAssets();
 
 const watch = process.argv.includes('--watch');
+// Ship the same sandbox plugin as a builtin and a portable, ZIP-installable example.
+const markdownDir = path.join(root, 'extensions', 'builtin', 'underoot.markdown');
+await esbuild.build({ entryPoints: [path.join(root, 'src/plugins/markdown.js')], outfile: path.join(markdownDir, 'plugin.js'), bundle: true, format: 'iife', target: ['chrome100','firefox100','safari15'], minify: true, legalComments: 'eof' });
+fs.copyFileSync(path.join(root, 'node_modules/katex/dist/katex.min.css'), path.join(markdownDir, 'katex.min.css'));
+fs.mkdirSync(path.join(markdownDir, 'fonts'), { recursive: true });
+for (const font of fs.readdirSync(path.join(root, 'node_modules/katex/dist/fonts')).filter((f) => f.endsWith('.woff2'))) fs.copyFileSync(path.join(root, 'node_modules/katex/dist/fonts', font), path.join(markdownDir, 'fonts', font));
+const exampleDir = path.join(root, 'examples/plugins/markdown');
+copyFolder(markdownDir, exampleDir);
+const exampleManifest = JSON.parse(fs.readFileSync(path.join(markdownDir, 'underoot-plugin.json'), 'utf8'));
+exampleManifest.id = 'research.markdown'; exampleManifest.contributes.commands[0].id = 'research.markdown.open';
+fs.writeFileSync(path.join(exampleDir, 'underoot-plugin.json'), JSON.stringify(exampleManifest, null, 2));
 
 /** @type {import('esbuild').BuildOptions} */
 const options = {
