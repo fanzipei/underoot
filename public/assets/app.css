@@ -1133,3 +1133,4 @@ textarea.input { height: auto; padding: 10px 12px; resize: vertical; }
 @media(max-width:650px){.ai-review-chip{left:15px;}.ai-inline-review{width:calc(100vw - 24px);}}
 #publishing-progress { white-space:pre-wrap;line-height:1.7;overflow-wrap:anywhere; }
 @media(max-width:650px) { .publishing-styles { grid-template-columns:1fr; }.publishing-style { display:grid;grid-template-columns:100px 1fr; }.publishing-swatch { grid-row:span 2; }.publishing-fields { grid-template-columns:1fr; } }
+#wasm-progress{max-width:44vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--accent)}

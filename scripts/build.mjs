@@ -4,6 +4,8 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import './build-tex-runtime.mjs';
+import { installModernTeX } from './install-modern-tex.mjs';
+await installModernTeX();
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outfile = path.join(root, 'public', 'assets', 'app.js');

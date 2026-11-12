@@ -31,3 +31,30 @@ does not download third-party packages or execute native TeX on the server.
 The bundle supports basic pdfLaTeX, mathematics and multi-file projects. Modern
 conference classes, CJK system fonts, XeTeX/LuaTeX and extra packages should use
 an appropriate server compiler. No shell-escape is offered.
+
+## Modern browser engine (underoot 0.6)
+
+`scripts/install-modern-tex.mjs` downloads the pinned TeXlyre-BusyTeX build
+`46ebb6216a5c1fe63dd1dc885831d1a8cef2dc86` (TeX Live 2026) and verifies each
+asset's fixed size and SHA-256 against the release digests. Generated assets
+live in `tl2026-46ebb621/`, outside Git. Normal startup after installation works
+without GitHub access. Basic runtime assets total approximately 128 MB and are
+cached by the browser; on-demand packages/fonts are proxied and cached by the
+instance, not compiled there. Legacy SwiftLaTeX assets remain for regression.
+
+Source and corresponding build instructions:
+https://github.com/TeXlyre/texlyre-busytex-build/tree/46ebb6216a5c1fe63dd1dc885831d1a8cef2dc86
+Release:
+https://github.com/TeXlyre/texlyre-busytex-build/releases/tag/build_wasm_46ebb6216a5c1fe63dd1dc885831d1a8cef2dc86_31802832436_1
+TeXlyre modifications are AGPL-3.0, Copyright (c) 2026 Fares Abawi;
+the original BusyTeX is MIT licensed. The AGPL text is preserved in
+`TEXLYRE-LICENSE.txt`; the engine stays in its own Worker. The upstream engine
+and pipeline assets are unmodified. `modern-worker.js` only reports resource
+progress to the host; shell escape is disabled, with no external shell handlers.
+
+TeX component/font licenses remain applicable. Missing resources come from the
+upstream TeX Live 2026 package service https://texlive2026.texlyre.org, over HTTPS,
+using format and basename only. No manuscript bodies or credentials are sent
+there. Local cached files record SHA-256 for corruption detection; the service's
+individual files are not upstream-signed or guaranteed immutable. Bump the
+runtime/cache version deliberately when migrating distributions.

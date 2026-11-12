@@ -43,6 +43,8 @@ if (engines.some((e) => e.id === 'xelatex')) {
  check('转换生成的中文 TeX 可实际编译 PDF', compiled.data.ok === true);
 }
 check('可以按项目保存 WASM 引擎选择', (await req(`/api/projects/${pid}`, owner, 'PATCH', { engine: 'wasm-pdftex' })).data.project.engine === 'wasm-pdftex');
+check('可以显式选择本地 XeLaTeX', (await req(`/api/projects/${pid}`, owner, 'PATCH', { engine: 'wasm-xetex' })).data.project.engine === 'wasm-xetex');
+check('本地 XeLaTeX 不会误触发服务器编译', (await req(`/api/projects/${pid}/compile`, owner, 'POST', {})).status === 400);
 check('WASM 不会在服务器冒充本地编译', (await req(`/api/projects/${pid}/compile`, owner, 'POST', {})).status === 400);
 const files = (await req(base + '/browser-files', owner)).data.files;
 check('浏览器编译文件接口包含真实源码', Buffer.from(files.find((f) => f.path === 'main.tex').base64,'base64').toString().includes('documentclass'));

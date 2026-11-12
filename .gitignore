@@ -7,6 +7,7 @@ extensions/builtin/underoot.markdown/fonts/
 examples/plugins/markdown/
 public/wasm/texlive/
 public/wasm/texlive-index.json
+public/wasm/tl2026-*/
 
 # 运行时数据（数据库、会话密钥、管理员初始密码、用户项目文件）
 data/

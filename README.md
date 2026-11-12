@@ -470,3 +470,13 @@ Slides 和 Poster 各有 8 种内置风格，生成前在卡片界面确认画�
 第三方模板插件使用 `publishing.templates.read/write/extract` 与 SDK `templates.list/register/extractPdf`。宿主管理 PDF 选择和确认，沙箱仅接收安全风格字段。插件中心提供模板包 ZIP 示例；规范见 [`underoot-plugin-dev`](skills/underoot-plugin-dev/SKILL.md)。
 
 「更多 → Vim 编辑模式」或底部 VIM 开关启用 Normal / Insert / Visual 模式；支持 `:w` 编译保存，`u` / `Ctrl+r` 使用协作编辑的撤销/重做。默认关闭，按用户在本机记忆；只读成员不可编辑。管理员可在插件中心独立停用 Vim。
+
+## 十七、中文与会议模板的本地 WASM 编译（v0.6）
+
+选择「本地 WASM · 自动（中文 / 会议）」：TeX Live 2026 根据正文和宏包自动选择 pdfLaTeX 或 XeLaTeX，也可显式选择「本地 WASM · XeLaTeX」。中文注释不影响引擎选择。支持 `ctex` / `xeCJK` 配合 Fandol 等开放字体；浏览器不能直接使用服务器或操作系统里的私有字体，指定 SimSun 等未分发字体时需上传获准使用的字体文件或改用 Fandol。
+
+缺失宏包与字体会通过当前实例，向固定 HTTPS TeX Live 2026 资源服务按名称获取。正文、图片、API Key 不发送给资源服务；网络请求会包含资源文件名。首次加载基础引擎约 128 MB，构建时自动下载固定版本并逐项校验 SHA-256，浏览器缓存复用。后续缺失文件按需下载，实例持久缓存在 `data/wasm-cache/tl2026-46ebb621/`（默认 512 MB、单文件 32 MB、最多 4000 条，按近期使用淘汰），同时使用浏览器 HTTP 缓存；不要求一次下载完整 TeX Live。网络失败不会永久记录为文件不存在，恢复网络后可重新编译。UI 显示下载阶段并支持停止；单次编译最多 6 分钟。
+
+`UNDEROOT_WASM_DOWNLOADS=0` 可关闭在线取包，已缓存资源仍可用。首次构建需能连接 GitHub，首次使用未缓存宏包需能连接资源服务；完整离线部署应预先构建和编译需要的模板以预热缓存。断网后只有所需资源齐全时才能编译。BibTeX、索引和交叉引用由浏览器流水线处理；本版不提供 Biber 模块、任意系统字体、外部绘图程序或 shell escape，使用这些功能的论文仍需适当调整或选择服务器编译。
+
+实现基于独立 Worker 中的 [TeXlyre-BusyTeX](https://github.com/TeXlyre/texlyre-busytex-build/tree/46ebb6216a5c1fe63dd1dc885831d1a8cef2dc86)，许可证及源代码链接见 [`public/wasm/NOTICE.md`](public/wasm/NOTICE.md)。验证命令：`npm run test:wasm:modern`；实际执行 WASM 二进制，不以服务器原生 TeX 代替浏览器引擎。

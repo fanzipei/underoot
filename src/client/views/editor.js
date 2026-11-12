@@ -4,7 +4,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { syntaxHighlighting, HighlightStyle, StreamLanguage, bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language';
 import { stex } from '@codemirror/legacy-modes/mode/stex';
 import { openGitSync } from '../git-sync.js';
-import { BrowserTeX } from '../wasm-compiler.js';
+import { BrowserTeX, isBrowserEngine } from '../wasm-compiler.js';
 import {openTemplateLibrary}from'../template-library.js';
 import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/autocomplete';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
@@ -182,7 +182,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     const data = await api.get(`/api/projects/${projectId}`);
     project = data.project;
     tree = data.tree;
-    engines = [...(Array.isArray(data.engines) ? data.engines : []), { id: 'wasm-pdftex', name: '本地 WASM · pdfLaTeX（基础宏包）', kind: 'browser' }];
+    engines = [...(Array.isArray(data.engines) ? data.engines : []), { id: 'wasm-pdftex', name: '本地 WASM · 自动（中文 / 会议）', kind: 'browser' }, { id:'wasm-xetex',name:'本地 WASM · XeLaTeX',kind:'browser' }];
     initialIssues = Array.isArray(data.issues) && data.issues.length
       ? data.issues
       : (Array.isArray(data.clashes) ? data.clashes.map((c) => ({ title: `宏包选项冲突：${c.pkg}`, hint: c.hint, code: 'option-clash' })) : []);
@@ -206,7 +206,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   let activePath = null;
   let docs = new Map(); // path -> {doc, provider, ytext, undo}
   let compiling = false;
-  const browserTeX = new BrowserTeX(); let browserPdf = null;
+  const browserTeX = new BrowserTeX((message)=>{const status=root.querySelector('#wasm-progress');if(status){status.textContent=message;status.hidden=!message;}}); let browserPdf = null;
   let changingEngine = false;
   const canEdit = ['owner', 'editor'].includes(project.role);
   let extensionList = await loadExtensions();
@@ -238,6 +238,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
           </select>
         </label>
         <button class="btn btn-primary btn-sm" id="btn-compile" style="height:30px;padding:0 12px">${icon('play')}<span>编译</span></button>
+        <button class="btn btn-sm" id="btn-wasm-cancel" style="display:none">停止本地编译</button>
         <div id="user-chip" style="cursor:pointer">${avatarHtml(user, 'avatar-sm')}</div>
       </header>
 
@@ -264,6 +265,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
           <div class="tabs" id="tabs"></div>
           <div class="ed-host" id="ed-host"></div>
           <div class="statusbar">
+            <span id="wasm-progress" role="status" hidden></span>
             <span id="st-pos">行 1, 列 1</span>
             <span id="st-sel"></span>
             <span id="st-engine"></span>
@@ -767,6 +769,9 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
   /* ---------- 编译 ---------- */
   function setCompileBusy(busy, label = '编译') {
+    const cancel=root.querySelector('#btn-wasm-cancel');
+    cancel.style.display=busy&&isBrowserEngine(project.engine)?'':'none';
+    cancel.onclick=()=>{compileQueued=false;browserTeX.destroy();};
     els.engineSelect.disabled = !canEdit || busy || changingEngine;
     els.compileBtn.disabled = busy;
     els.compileBtn.innerHTML = busy
@@ -785,7 +790,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     els.engineSelect.value = project.engine || 'auto';
     if (!canEdit) els.engineSelect.disabled = true;
     const label = engineName(project.engine);
-    const extra = currentCompile?.engine ? ` · 上次 ${engineName(currentCompile.engine)}` : '';
+    const extra = currentCompile?.engine ? ` · 上次 ${currentCompile.localEngine||engineName(currentCompile.engine)}` : '';
     els.stEngine.textContent = `引擎 ${label}${extra}`;
     els.stEngine.title = '在顶部「编译器」中切换；pdfLaTeX 的排版与 Overleaf 默认一致';
   }
@@ -862,7 +867,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }
 
   async function compile(manual = false) {
-    if (!canEdit && project.engine !== 'wasm-pdftex') {
+    if (!canEdit && !isBrowserEngine(project.engine)) {
       const output = baseName(project.mainFile).replace(/\.[^.]+$/, '') + '.pdf';
       if (findFile(tree, output)) showPdf(`/api/projects/${projectId}/pdf?file=${encodeURIComponent(output)}`);
       return;
@@ -873,13 +878,13 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     if (manual && pdfVisible) showPdfLoading();
     try {
       let res;
-      if (project.engine === 'wasm-pdftex') {
+      if (isBrowserEngine(project.engine)) {
         const payload = await api.get(`/api/workspace/projects/${projectId}/browser-files`);
         if (activePath && docs.has(activePath)) {
           const file = payload.files.find((f) => f.path === activePath);
           if (file) file.content = view.state.doc.toString();
         }
-        res = await browserTeX.compile(project.mainFile, payload.files);
+        res = await browserTeX.compile(project.mainFile, payload.files, project.engine);
         if (res.ok) { if (browserPdf) URL.revokeObjectURL(browserPdf); browserPdf = res.pdf; }
       } else res = await api.post(`/api/projects/${projectId}/compile`, {
         mainFile: project.mainFile,
@@ -925,8 +930,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
   function renderLog(res) {
     const serverButton = root.querySelector('#btn-wasm-server');
-    const fallback = engines.find((e) => e.id === 'xelatex') || engines.find((e) => e.kind !== 'browser' && e.id !== 'wasm-pdftex' && e.id !== 'auto');
-    serverButton.style.display = canEdit && !res.ok && res.engine === 'wasm-pdftex' && fallback ? '' : 'none';
+    const fallback = engines.find((e) => e.id === 'xelatex') || engines.find((e) => e.kind !== 'browser' && e.id !== 'auto');
+    serverButton.style.display = canEdit && !res.ok && isBrowserEngine(res.engine) && fallback ? '' : 'none';
     serverButton.onclick = () => setEngine(fallback.id);
     const problems = [
       ...(res.errors || []).map((e) => ({ ...e, level: 'err' })),
@@ -1378,7 +1383,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     return () => {
       if (!autoCompile) return;
       clearTimeout(timer);
-      timer = setTimeout(() => compile(false), project.engine === 'wasm-pdftex' ? 650 : 1800);
+      timer = setTimeout(() => compile(false), isBrowserEngine(project.engine) ? 650 : 1800);
     };
   })();
   // 只有本地键入触发自动编译；远程同步的改动由项目事件通道统一广播编译结果，避免每人各编译一次

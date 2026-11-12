@@ -329,7 +329,7 @@ projectsRouter.patch('/:id', loadProject, (req, res) => {
   if (mainFile) db.prepare('UPDATE projects SET main_file = ? WHERE id = ?').run(mainFile, req.project.id);
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'engine')) {
     const want = String(req.body.engine || 'auto').trim();
-    const valid = want === 'auto' || want === 'wasm-pdftex' || detectEngines().engines.some((e) => e.id === want);
+    const valid = want === 'auto' || ['wasm-pdftex','wasm-xetex'].includes(want) || detectEngines().engines.some((e) => e.id === want);
     if (!valid) return res.status(400).json({ error: `未知的编译引擎：${want}` });
     db.prepare('UPDATE projects SET engine = ? WHERE id = ?').run(want === 'auto' ? null : want, req.project.id);
     compileCache.delete(req.project.id);   // 换引擎必须重编
@@ -568,7 +568,7 @@ projectsRouter.post('/:id/compile', loadProject, async (req, res) => {
   const force = req.body?.force === true;
   // 项目级引擎优先，其次本次请求（前端临时切换），最后 auto 跟随服务端默认
   const requestedEngine = req.body?.engine || req.project.engine || 'auto';
-  if (requestedEngine === 'wasm-pdftex') return res.status(400).json({ error: 'WASM 引擎在浏览器中运行，请在编辑器点击编译，或改用服务器引擎' });
+  if (['wasm-pdftex','wasm-xetex'].includes(requestedEngine)) return res.status(400).json({ error: 'WASM 引擎在浏览器中运行，请在编辑器点击编译，或改用服务器引擎' });
   const engine = pickEngine(requestedEngine);
   const engineKey = engine ? engine.id : String(requestedEngine);
   const dir = projectDir(req.project.id);

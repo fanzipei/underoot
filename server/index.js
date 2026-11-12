@@ -47,6 +47,7 @@ app.get('/favicon.ico', (req, res) => res.type('image/svg+xml').sendFile(path.jo
 
 app.use(express.static(PUBLIC_DIR, { index: false, maxAge: 0, setHeaders(res, filePath) {
   if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
+  if (filePath.includes(path.join('wasm','tl2026-46ebb621')+path.sep)&&!filePath.endsWith('underoot-worker.js')) res.setHeader('Cache-Control','public, max-age=31536000, immutable');
 } }));
 
 app.get('*', (req, res, next) => {

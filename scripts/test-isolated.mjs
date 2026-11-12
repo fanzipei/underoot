@@ -29,6 +29,7 @@ const platform = process.argv.includes('--platform');
 const publishing = process.argv.includes('--publishing');
 const economy = process.argv.includes('--economy');
 const templates = process.argv.includes('--templates');
+const modernWasm = process.argv.includes('--modern-wasm');
 if (research || platform || publishing || economy) env.LATEXSTUDIO_AI_ALLOW_LOCAL = '1'; // Disposable mock API only, never changes production config.
 env.ADMIN_PASSWORD = env.LATEXSTUDIO_ADMIN_PASSWORD;
 const log = fs.openSync(path.join(data, 'server.log'), 'w', 0o600);
@@ -47,7 +48,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (!ready) throw new Error('测试服务启动超时');
-  const suite = spawn(process.execPath, [templates ? 'scripts/templates-test.mjs' : economy ? 'scripts/assistant-economy-test.mjs' : publishing ? 'scripts/publishing-test.mjs' : platform ? 'scripts/platform-test.mjs' : research ? 'scripts/research-test.mjs' : 'scripts/smoke-test.mjs'], { cwd: root, env, windowsHide: true, stdio: 'inherit' });
+  const suite = spawn(process.execPath, [modernWasm ? 'scripts/modern-wasm-test.mjs' : templates ? 'scripts/templates-test.mjs' : economy ? 'scripts/assistant-economy-test.mjs' : publishing ? 'scripts/publishing-test.mjs' : platform ? 'scripts/platform-test.mjs' : research ? 'scripts/research-test.mjs' : 'scripts/smoke-test.mjs'], { cwd: root, env, windowsHide: true, stdio: 'inherit' });
   const [code] = await once(suite, 'exit');
   process.exitCode = code ?? 1;
 } finally {
