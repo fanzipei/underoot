@@ -25,7 +25,7 @@ for(const kind of['poster','slides'])for(const style of(kind==='poster'?['galler
  fs.writeFileSync(path.join(dir,'fit-report.json'),JSON.stringify({initialUsage,result,editorial},null,2));
  console.log(id,JSON.stringify({status:result.status,initialUsage,usage:result.usage,iterations:result.iterations.length,issues:result.issues,errors:result.errors}));
  assert.equal(result.pages,kind==='poster'?1:editorial.pages.length+1);assert.equal(result.errors.length,0);assert.equal(result.outsideText,0);assert.ok(!result.overflowWarnings.some(w=>w.points>1));
- assert.ok(result.iterations.length>1&&result.iterations.length<=6);assert.ok(result.usage.maximum<=1.01);
+ assert.ok(result.iterations.length>1&&result.iterations.length<=8);assert.ok(result.usage.maximum<=1.01);
  if(kind==='poster'){assert.ok(result.usage.minimum>initialUsage.minimum+.15,'Poster should materially use more of its canvas');assert.ok(result.usage.minimum>=.45,'No almost-empty column');assert.ok(result.panelFill?.enabled&&result.panelFill.framedUsage.minimum>=.99&&result.panelFill.framedUsage.maximum<=1.01,'Panels fill the entire body height');}
  else assert.ok(result.usage.minimum>initialUsage.minimum,'Sparse slides get larger, readable content');
  for(const name of['Alice Example','Bob Example','Example University','Example Institute'])assert.ok(fs.readFileSync(path.join(dir,'main.tex'),'utf8').includes(name));

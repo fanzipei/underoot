@@ -113,7 +113,7 @@ ${identityHeader(identity,info.author)}
 \\end{minipage}\\end{lrbox}
 \\noindent\\usebox{\\posterheader}\\par
 \\setlength{\\postercolumnwidth}{\\dimexpr(\\textwidth-${columnsCount-1}\\columnsep)/${columnsCount}\\relax}
-\\fontsize{${font}}{${font+11}}\\selectfont
+\\fontsize{${font}}{${story.posterLeading||font+11}}\\selectfont
 \\setlength{\\leftmargini}{1.05em}\\setlength{\\labelsep}{.35em}
 \\renewcommand{\\labelitemi}{\\raisebox{.15ex}{\\textcolor{posterblue}{\\rule{.13em}{.13em}}}}
 ${footer?`\\begin{lrbox}{\\underootfooterbox}\\begin{minipage}{\\textwidth}${block(footer)}

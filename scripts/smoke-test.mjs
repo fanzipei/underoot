@@ -115,13 +115,18 @@ async function main() {
     check('file-line-error 格式保留一键修复诊断', fileError?.code === 'option-clash' && fileError?.package === 'xcolor');
   }
   {
-    const { detectEngines, pickEngine, engineLabel, enginePathDirs } = await import('../server/compile.js');
+    const { detectEngines, pickEngine, engineLabel, enginePathDirs, needsUnicodeEngine } = await import('../server/compile.js');
     const list = detectEngines().engines.map((e) => e.id);
     check('pickEngine 能选中已安装引擎', !!pickEngine() && list.includes(pickEngine().id), pickEngine()?.id);
     check('pickEngine 指定不可用引擎返回 null', pickEngine('definitely-not-installed') === null);
     check('pickEngine auto 走默认优先级', !!pickEngine('auto'), '');
-    check('引擎有可读标签', engineLabel('latexmk').includes('pdfLaTeX') && engineLabel('tectonic').includes('Tectonic'));
+    check('引擎有可读标签', engineLabel('latexmk').includes('自动') && engineLabel('tectonic').includes('Tectonic'));
     check('enginePathDirs 返回数组', Array.isArray(enginePathDirs()), `${enginePathDirs().length} 个目录`);
+    check('CTeX 标题区自动选择 Unicode 引擎',needsUnicodeEngine(String.raw`\documentclass[fontset=fandol]{ctexart}`));
+    check('fontspec 自动选择 Unicode 引擎',needsUnicodeEngine(String.raw`\usepackage{graphicx,fontspec}`));
+    check('注释和正文示例不改变编译引擎',!needsUnicodeEngine(String.raw`% \documentclass{ctexart}
+\documentclass{article}\begin{document}\usepackage{fontspec}`));
+    check('正文展示 fontspec 代码不会改变引擎',!needsUnicodeEngine(String.raw`\documentclass{article}\begin{document}\usepackage{fontspec}`));
     const previous = process.env.LATEX_ENGINE;
     try {
       process.env.LATEX_ENGINE = list.at(-1);

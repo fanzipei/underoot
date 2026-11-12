@@ -234,7 +234,7 @@ try {
   const slides = await req(base + '/derive', owner, 'POST', { kind: 'slides' });
   const poster = await req(base + '/derive', owner, 'POST', { kind: 'poster' });
   check('一键生成独立 Slides 项目', !!slides.data.project?.id && slides.data.project.id !== pid);
-  check('一键生成独立 Poster 项目', !!poster.data.project?.id && poster.data.project.id !== pid);
+  check('一键生成独立 Poster 项目', !!poster.data.project?.id && poster.data.project.id !== pid,JSON.stringify(poster.data));
   const slidesTex = (await req(`/api/projects/${slides.data.project.id}/file?path=presentation.tex`, owner)).data.content;
   const posterTex = (await req(`/api/projects/${poster.data.project.id}/file?path=academic-poster.tex`, owner)).data.content;
   check('Slides 从论文内容生成，不是空白模板', slidesTex.includes('Reliable research') && slidesTex.includes('measured result is 42') && slidesTex.includes('figure.png'));
@@ -246,6 +246,8 @@ try {
     const compiledPoster = await req(`/api/projects/${poster.data.project.id}/compile`, owner, 'POST', { force: true });
     check('生成的 Slides 可真实编译', compiledSlides.data.ok, compiledSlides.data.errors?.[0]?.message || '');
     check('生成的 Poster 可真实编译', compiledPoster.data.ok, compiledPoster.data.errors?.[0]?.message || '');
+    if(engines.some(e=>e.id==='latexmk')){const automatic=await req(`/api/projects/${poster.data.project.id}/compile`,owner,'POST',{force:true,engine:'latexmk'});check('CTeX Poster 使用 latexmk 自动执行 XeLaTeX',automatic.data.ok,automatic.data.errors?.[0]?.message||'');}
+    if(engines.some(e=>e.id==='pdflatex')){const incompatible=await req(`/api/projects/${poster.data.project.id}/compile`,owner,'POST',{force:true,engine:'pdflatex'});check('显式 pdfLaTeX 不兼容时给出可操作说明',!incompatible.data.ok&&incompatible.data.errors?.some(e=>e.message.includes('XeLaTeX')));}
   }
   const template = new AdmZip();
   template.addFile('new-conference/main.tex', Buffer.from('\\documentclass[11pt]{article}\n\\usepackage{graphicx}\n\\title{Template}\n\\author{Template Author}\n\\begin{document}\nTEMPLATE_PLACEHOLDER\n\\end{document}\n'));

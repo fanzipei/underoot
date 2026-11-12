@@ -30,6 +30,7 @@ export function adjustLayout(story,options,measured,usage,overflow=false){
   if(previous!==JSON.stringify(story.columns))return true; // Measure this new partition before changing typography.
   const factor=overflow||usage.maximum>1?clamp(.90/usage.maximum,.78,.95):usage.maximum<.88?clamp(Math.sqrt(.92/Math.max(.12,usage.maximum)),1.06,1.30):1;
   story.posterFont=clamp(Math.round((story.posterFont||36)*factor),32,64);
+  if(overflow&&story.posterFont===32)story.posterLeading=story.posterFont+5;
   story.posterFigureHeight=clamp(Number(((story.posterFigureHeight||(options.orientation==='landscape'?14:19))*factor).toFixed(1)),10,options.orientation==='landscape'?30:38);
  }else for(const page of story.pages){
   const fill=usage.pages.find(p=>p.id===page.id)?.fill;if(!fill)continue;
@@ -42,18 +43,18 @@ export function adjustLayout(story,options,measured,usage,overflow=false){
  return before!==JSON.stringify(story);
 }
 /** Real compile/measure loop; never uses paid model calls or edits research claims. */
-export async function fitPublication(info,options,{render,write,audit,check=()=>{},progress=()=>{},maxRounds=6}){
+export async function fitPublication(info,options,{render,write,audit,check=()=>{},progress=()=>{},maxRounds=8}){
  let story=info.editorial,best=null,lastContent;const rounds=[];
  for(const page of story.pages){delete page.posterShare;delete page.posterGaps;delete page.posterBoxCorrection;}
  if(options.kind==='poster')story.posterFont=posterFontFor(story,options,options.customTemplate||{});
- const limit=Math.max(1,Math.min(6,Math.floor(maxRounds))),trials=options.kind==='poster'?Math.max(1,limit-2):limit;
+ const limit=Math.max(1,Math.min(8,Math.floor(maxRounds))),trials=options.kind==='poster'?Math.max(1,limit-2):limit;
  for(let round=1;round<=trials;round++){
   check();progress({phase:'layout',message:`自动排版 ${round}/${trials}：编译并测量实际内容高度`});
   const content=render({...info,editorial:story},options);lastContent=content;write(content);const result=await audit();check();
   const usage=layoutUsage(story,options,result.measurements||{});
   const valid=result.status==='passed'&&(!usage||usage.maximum<=1.01);
   const sparse=usage&&(options.kind==='poster'?usage.maximum<.85||usage.minimum<.62:usage.pages.some(p=>p.fill<.48));
-  const score=valid?(options.kind==='poster'&&usage?Math.min(.9,usage.minimum)+Math.min(.9,usage.maximum):usage?usage.pages.reduce((n,p)=>n+Math.min(.82,p.fill),0)/usage.pages.length:0):-100-(result.issues?.length||0);
+  const score=valid?(options.kind==='poster'&&usage?Math.min(.9,usage.minimum)+Math.min(.9,usage.maximum):usage?usage.pages.reduce((n,p)=>n+Math.min(.82,p.fill),0)/usage.pages.length:0):-100-100*Math.max(0,(usage?.maximum||1)-1)-1000*(result.errors?.length||0)-(result.issues?.length||0);
   rounds.push({round,status:result.status,usage,posterFont:story.posterFont,figureHeight:story.posterFigureHeight,columns:story.columns,footer:story.posterFooter,pageFormats:options.kind==='slides'?story.pages.map(p=>({id:p.id,font:p.slideFont,figureHeight:p.figureHeight})):undefined,issues:result.issues||[],errors:result.errors||[]});
   if(!best||score>best.score)best={score,content,story:structuredClone(story),result,usage};
   if(result.status==='unavailable'||(!sparse&&valid)||round===trials)break;

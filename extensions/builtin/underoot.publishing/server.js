@@ -84,6 +84,7 @@ export async function deriveProject(project, userId, body, runtime = {}) {
   let entry = options.kind === 'slides' ? 'presentation.tex' : 'academic-poster.tex';
   if (fs.existsSync(resolveInside(dir,entry))) entry = `${options.kind}-${id.slice(0,8)}.tex`;
   const layout=await fitPublication({...plan,sections:summary.sections,editorial},options,{render:renderPublication,write:content=>fs.writeFileSync(resolveInside(dir,entry),content,'utf8'),audit:()=>auditDraft(id,entry,options,{check,progress:runtime.progress}),check,progress:runtime.progress});
+  if(layout.status==='needs-review'&&((layout.errors||[]).length||layout.outsideText||(layout.overflowWarnings||[]).some(w=>w.points>1)||(options.kind==='poster'&&layout.pages!==null&&layout.pages!==1)||layout.usage?.maximum>1.01))throw failure(422,'生成结果未通过编译或排版检查，已保留确认的提纲与原稿；请调整内容密度或版式后重试：'+layout.issues.join('；'));
   const reportPath = `underoot-publishing/${id}/plan.json`;
   const reportDir = resolveInside(dir,`underoot-publishing/${id}`); fs.mkdirSync(reportDir,{recursive:true});
   const { chunks, ...metadata } = plan;

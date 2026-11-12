@@ -67,11 +67,12 @@ try{
  check(kind+' generated identity contains all authors and units',['Alice Example','Bob Example','Example University','Example Institute'].every(s=>original.includes(s)));
  const qr=await fetch(BASE+`/api/projects/${derived}/raw?path=${encodeURIComponent(draft.identity.qrPath)}`,{headers:{cookie:owner}});const qrBytes=Buffer.from(await qr.arrayBuffer());check(kind+' QR is generated locally as a real PNG',qr.status===200&&qrBytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])));
  // Recreate the v0.8 session format to exercise upgrade/reflow of existing outputs.
- const migration=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const payload=JSON.parse(migration.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);if(kind==='slides'){delete payload.rendererVersion;delete payload.editorial.identity;}else payload.rendererVersion=3;
- const legacy=(kind==='slides'?legacyRender:v3Render)({...payload.plan,editorial:payload.editorial},payload.options,publishingStyles[kind].find(s=>s.id===payload.options.style));migration.prepare('UPDATE publishing_sessions SET payload=? WHERE id=?').run(JSON.stringify(payload),draft.id);migration.close();await req(file,owner,'PUT',{content:legacy});
+ const migration=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const payload=JSON.parse(migration.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);if(kind==='slides'){delete payload.rendererVersion;delete payload.editorial.identity;}else{payload.rendererVersion=3;payload.preamblePrefix='% retained package-option repair\n';}
+ const legacy=(payload.preamblePrefix||'')+(kind==='slides'?legacyRender:v3Render)({...payload.plan,editorial:payload.editorial},payload.options,publishingStyles[kind].find(s=>s.id===payload.options.style));migration.prepare('UPDATE publishing_sessions SET payload=? WHERE id=?').run(JSON.stringify(payload),draft.id);migration.close();await req(file,owner,'PUT',{content:legacy});
  const derivedBase=`/api/workspace/projects/${derived}/derive`;
  const reflow=await req(derivedBase+'/jobs',owner,'POST',{phase:'reflow',draftId:draft.id,version:draft.version,confirmed:true,identity});const refitted=await wait(reflow.data.id,derivedBase);if(refitted.status!=='complete')console.error(refitted);
  check(kind+' legacy v0.8/v0.9 outputs can reflow in the same project',refitted.status==='complete'&&refitted.result.draft.projectId===derived);draft=refitted.result.draft;original=(await req(file,owner)).data.content;
+ if(kind==='poster')check('tracked package-option preamble survives reflow',original.startsWith(payload.preamblePrefix));
  check(kind+' reflow retains every author and institution',['Alice Example','Bob Example','Example University','Example Institute'].every(s=>original.includes(s)));
  check(kind+' generated TeX contains approved content and stable markers',original.includes('A user-reviewed research question')&&original.includes('% underoot:block:'));
  check(kind+' source snapshot preserved',(await req(`/api/projects/${derived}/file?path=main.tex`,owner)).data.content===main);
@@ -117,6 +118,21 @@ try{
  check(kind+' global reflow preserves manual edits',refused.status==='failed'&&(await req(file,owner)).data.content===protectedTex);
  await req(`/api/projects/${project.id}`,owner,'DELETE');
  check(kind+' derived discussion survives deletion of original project',(await req(dest,owner)).data.projectId===derived);
+ }
+
+ if((await req('/api/system/engines',owner)).data.engines.some(e=>e.id==='xelatex')){
+  const project=(await req('/api/projects',owner,'POST',{name:'Oversized caption safety fixture',template:'blank'})).data.project;
+  const source=String.raw`\documentclass{article}\author{Fixture Author}\begin{document}\section{Method}We evaluate the measured evidence.\begin{figure}\includegraphics{accuracy.png}\caption{`+'Measured caption words '.repeat(2000)+String.raw`}\end{figure}\end{document}`;
+  await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:source});
+  const upload=new FormData();upload.append('files',new Blob([fs.readFileSync('scripts/fixtures/publishing/accuracy.png')]),'accuracy.png');await fetch(BASE+`/api/projects/${project.id}/upload`,{method:'POST',headers:{cookie:owner},body:upload});
+  const base=`/api/workspace/projects/${project.id}/derive`,plan=(await req(base+'/plan',owner)).data;
+  async function waitSafety(id){for(let n=0;n<1800;n++){const job=(await req(base+'/jobs/'+id,owner)).data;if(['complete','failed','cancelled'].includes(job.status))return job;await new Promise(r=>setTimeout(r,100));}throw Error('Safety fixture timeout');}
+  const start=await req(base+'/jobs',owner,'POST',{phase:'outline',kind:'poster',style:'gallery',count:6,columns:3,useAI:false,confirmed:true,planDigest:plan.digest});assert.equal(start.status,202,JSON.stringify(start.data));const outline=await waitSafety(start.data.id);
+  check('oversized visual retains an editable outline',outline.status==='complete'&&outline.result.draft.pages.length>0);
+  const draft=outline.result.draft,before=(await req('/api/projects',owner)).data.projects.length;
+  const generate=await req(base+'/jobs',owner,'POST',{draftId:draft.id,version:draft.version,confirmed:true});const failed=await waitSafety(generate.data.id);
+  check('known overflowing output is not published as completed',failed.status==='failed'&&(await req('/api/projects',owner)).data.projects.length===before);
+  check('failed fitting preserves original manuscript and approved outline',(await req(`/api/projects/${project.id}/file?path=main.tex`,owner)).data.content===source&&!(await req(base+'/drafts/'+draft.id,owner)).data.projectId);
  }
  console.log(`Publishing studio: ${checks}/${checks} passed`);
 }finally{await new Promise(r=>mock.close(r));}

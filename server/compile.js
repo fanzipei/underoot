@@ -57,7 +57,7 @@ function discoverTexlive() {
 /** 人类可读的引擎标签 */
 export function engineLabel(id) {
   return {
-    latexmk: 'pdfLaTeX (latexmk)',
+    latexmk: 'LaTeX (latexmk 自动)',
     pdflatex: 'pdfLaTeX',
     xelatex: 'XeLaTeX',
     lualatex: 'LuaLaTeX',
@@ -97,6 +97,13 @@ export function pickEngine(preferred) {
     || engines.find((e) => e.id === 'lualatex')
     || engines.find((e) => e.id === 'pdflatex')
     || null;
+}
+
+/** Unicode-only preamble, ignoring comments and body examples. No TeX execution. */
+export function needsUnicodeEngine(source) {
+  const preamble=String(source).replace(/(?<!\\)%[^\n]*/g,'').split(/\\begin\{document\}/)[0];
+  return /\\documentclass(?:\[[^\]]*\])?\s*\{ctex(?:art|book|rep|beamer)\}/.test(preamble)
+    || /\\usepackage(?:\[[^\]]*\])?\s*\{[^}]*\b(?:fontspec|xeCJK)\b[^}]*\}/.test(preamble);
 }
 
 /** 需要注入到编译子进程 PATH 的目录 */
@@ -248,6 +255,8 @@ export async function compileProject({ projectId, mainFile, engine: engineId = n
     };
   }
 
+  const unicode=needsUnicodeEngine(fs.readFileSync(main,'utf8'));
+  if(unicode&&engine.id==='pdflatex')return{ok:false,engine:engine.id,ms:0,log:'此文档使用 CTeX / Unicode 字体，请选择 XeLaTeX 或 latexmk 自动编译。',errors:[{file:mainFile,line:null,message:'文档需要 Unicode 字体引擎，请选择 XeLaTeX 或 latexmk',type:'error'}],warnings:[]};
   const relMain = path.relative(dir, main).replace(/\\/g, '/');
   const base = path.basename(relMain, path.extname(relMain));
   const pdfPath = path.join(dir, `${base}.pdf`);
@@ -263,7 +272,7 @@ export async function compileProject({ projectId, mainFile, engine: engineId = n
 
   let args;
   if (engine.id === 'latexmk') {
-    args = ['-pdf', '-interaction=nonstopmode', '-file-line-error', '-synctex=1', '-halt-on-error', '-no-shell-escape', relMain];
+    args = [unicode ? '-xelatex' : '-pdf', '-interaction=nonstopmode', '-file-line-error', '-synctex=1', '-halt-on-error', '-no-shell-escape', relMain];
   } else if (engine.id === 'tectonic') {
     args = ['--keep-logs', '--outdir', '.', '--chatter', 'minimal', relMain];
   } else {
