@@ -1,5 +1,6 @@
 /** Source-linked editorial and layout passes, shared by the skill and host. */
 import { plainText } from './chunk-paper.mjs';
+import {standaloneText,standalonePage} from './standalone-copy.mjs';
 const zh=(text)=>/[\u3400-\u9fff]/.test(text);
 const unique=(items)=>[...new Set(items)];
 const roles=['question','gap','method','result','limitation','conclusion','detail'];
@@ -43,8 +44,8 @@ export function editorialPlan(plan,summary,options){
  // 1. Inventory: retain complete source notes; remove repeated prose from the display.
  let cards=summary.sections.map((section,index)=>{
   const values=Array.isArray(section.bullets)&&section.bullets.length?section.bullets:sentences(section.text);
-  const bullets=values.map(v=>String(v).trim()).filter(v=>{const key=v.toLocaleLowerCase().replace(/\s+/g,' ');if(seen.has(key)){duplicates++;return false;}seen.add(key);return!!v;});
-  return{...section,id:'topic-'+(index+1),role:editorialRole(section.title),bullets,explicitTakeaway:typeof section.takeaway==='string'&&!!section.takeaway.trim(),takeaway:typeof section.takeaway==='string'?section.takeaway.trim():'',figures:[],equations:[],tables:[],sourceIds:unique(section.sourceIds||[])};
+  const bullets=values.map(v=>standaloneText(v)).filter(v=>{const key=v.toLocaleLowerCase().replace(/\s+/g,' ');if(seen.has(key)){duplicates++;return false;}seen.add(key);return!!v;});
+  return{...section,title:standaloneText(section.title)||'Research evidence',id:'topic-'+(index+1),role:editorialRole(section.title),bullets,explicitTakeaway:typeof section.takeaway==='string'&&!!section.takeaway.trim(),takeaway:typeof section.takeaway==='string'?standaloneText(section.takeaway):'',figures:[],equations:[],tables:[],sourceIds:unique(section.sourceIds||[])};
  });
  rounds.push({round:1,name:'来源与证据盘点',changes:[`保留全部 ${summary.notes.length} 个分块笔记`,`显示层去重 ${duplicates} 条重复句`],metrics:{sourceChunks:known.size,duplicates}});
  // 2. Narrative: question -> gap -> method -> evidence -> boundary -> conclusion.
@@ -103,6 +104,8 @@ export function editorialPlan(plan,summary,options){
   }
  }
  if(archive.length)warnings.push(`显示层选用 ${displayed.length} 个内容块，另有 ${archive.length} 个细节块保存在提纲记录中；分块 ID 覆盖不代表所有科学细节都显示在页面上。`);
+ displayed=displayed.map(standalonePage);
+ if(summary.sections.some(s=>[s.title,s.takeaway,...(s.bullets||[]),s.text].some(v=>v&&standaloneText(v)!==String(v).trim())))warnings.push('已将原稿交叉引用改为独立表述；无法安全改写的指向性句子仅保留在来源笔记，请在提纲中核对内容完整性。');
  const {columns,weights:sizes}=balanceColumns(displayed,options.columns||3);
  if(options.kind==='slides'&&pages.length>options.count)warnings.push(`为保留可读字号，正文拆为 ${pages.length} 页，超过目标 ${options.count} 页；可在提纲中进一步精简。`);
  rounds.push({round:4,name:options.kind==='slides'?'单页信息密度与分页':'海报信息层级与栏位平衡',changes:['长段落转为有来源的要点，超量内容保留在笔记','不通过不断缩小字号掩盖溢出'],metrics:{pages:displayed.length,columnWeights:sizes,archivedDetails:archive.length}});

@@ -1,3 +1,4 @@
+import {standaloneEditorial} from './standalone-copy.mjs';
 const tex=(v)=>String(v??'').replace(/[\\{}$&#_%~^]/g,c=>({'\\':'\\textbackslash{}','{':'\\{','}':'\\}','$':'\\$','&':'\\&','#':'\\#','_':'\\_','%':'\\%','~':'\\textasciitilde{}','^':'\\textasciicircum{}'}[c]));
 const lines=v=>String(v||'').split(/\n/).filter(Boolean).map(tex).join('\\\\{}');
 const names=v=>String(v||'').split(/\n/).filter(Boolean).map(tex).join(' \\quad ');
@@ -13,7 +14,7 @@ function identityHeader(identity,author){
 }
 const items=(page)=>{const rest=page.bullets.filter(b=>b!==page.takeaway);return rest.length?'\\begin{itemize}'+(page.posterShare?'\\setlength{\\itemsep}{.25em plus .25fill}':'')+'\n'+rest.map(b=>'\\item '+tex(b)).join('\n')+'\n\\end{itemize}':'';};
 const equation=(page)=>page.equations.map(e=>'\\[ '+e.tex+' \\]').join('\n');
-const caption=(visual)=>{const full=visual.caption||'';const first=full.split(/(?<=[。！？])|(?<=[.!?])\s+/)[0];return tex(first.length<=220?first||'Source figure · verify caption':'Full figure caption is retained in the source notes.');};
+const caption=(visual)=>{const full=visual.caption||'';const first=full.split(/(?<=[。！？])|(?<=[.!?])\s+/)[0];return tex(first);};
 const short=(text,max=42)=>String(text).length>max?String(text).slice(0,max).replace(/\s+\S*$/,'')+'…':String(text);
 const tables=(page,kind,bodyFont=28)=> (page.tables||[]).map(t=>`\\par\\medskip{\\fontsize{${kind==='slides'?Math.min(20,page.slideFont||12):Math.min(48,bodyFont)}}{${kind==='slides'?Math.min(20,page.slideFont||12)+3:Math.min(48,bodyFont)+6}}\\selectfont\\begin{tabularx}{\\linewidth}{@{}${t.headers.map(()=>'X').join('')}@{}}\\toprule\n${t.headers.map(h=>'\\textbf{'+tex(h)+'}').join(' & ')}\\\\\\midrule\n${t.rows.map(row=>row.map(tex).join(' & ')+'\\\\').join('\n')}\n\\bottomrule\\end{tabularx}\\par\\smallskip ${caption(t)}}\\par`).join('\n');
 export function posterFontFor(story,options,style){
@@ -21,7 +22,7 @@ export function posterFontFor(story,options,style){
  return story.posterFont||(options.style==='compact'||style.density==='compact'?32:load<(options.orientation==='portrait'?1500:1000)?44:36);
 }
 export function renderEditorial(info,options,style){
- const story=info.editorial;const identity=story.identity||info.identity||{authors:info.author,affiliations:'',contact:'',logos:[]};const accent=style.accent.slice(1);const bg=(style.background||'#ffffff').slice(1);const fg=(style.foreground||'#1c2933').slice(1);
+ const story=standaloneEditorial(info.editorial);const identity=story.identity||info.identity||{authors:info.author,affiliations:'',contact:'',logos:[]};const accent=style.accent.slice(1);const bg=(style.background||'#ffffff').slice(1);const fg=(style.foreground||'#1c2933').slice(1);
  const rgb=[1,3,5].map(p=>parseInt(style.accent.slice(p,p+2),16));const bandInk=rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722>160?'black':'white';
  if(options.kind==='slides'){
   const frames=story.pages.map(page=>{

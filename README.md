@@ -4,7 +4,7 @@
 
 一个**可插件扩展、可本地部署的 vibe research 平台**。用 LaTeX 写作与 PDF 审阅作为第一种研究工作流，连接 AI 建议、协作讨论、项目搜索、学术传播和可追溯版本。核心数据保存在本机 `data/`；模型与在线文献检索由用户按需启用。
 
-> 当前版本：**v0.2** · 论文审阅、协作与版本工作台。仓库：[fanzipei/underoot](https://github.com/fanzipei/underoot)。
+> 当前版本：**v0.9.1** · 论文审阅、协作与版本工作台。仓库：[fanzipei/underoot](https://github.com/fanzipei/underoot)。
 
 ---
 
@@ -505,3 +505,10 @@ Skill 可独立于应用数据库运行：[`SKILL.md`](skills/underoot-paper-pub
 v0.8 已生成且保留提纲的项目可再次打开工具，点击「保存署名并自动重排当前项目」，保留项目 ID 和历史。系统在隔离副本试排；发现手工修改或并发冲突时保留现有 TeX。更早没有持久提纲的输出仍可手动编辑。单位图标不会被自动下载或臆造。
 
 验证命令：`npm run test:publishing:fit`（纯逻辑与二维码）；`npm run test:publishing:studio`（隔离 API）；`npm run test:publishing:layout`（需要 XeLaTeX/Poppler，输出到系统临时 QA 目录）。
+
+
+### 0.9.1：完整作者提取与独立叙事
+
+自动读取完整标题区（包括 ACM 在 `\begin{document}` 后声明的作者/单位），支持 ICML 双参数作者列表、IEEE 作者块、NeurIPS 行内单位和有界的无参数文字宏；相同单位去重并保留作者对应编号。旧提纲缺失的作者信息也会从其已保存的原稿补全，明确保存的用户署名保持不变。
+
+Poster 和 Slides 面向独立阅读，采用描述性、无编号的图注，不沿用论文的 Figure/Section 编号或 `fig:...` 标记，也不指向没有展示的图片。AI 提纲与局部修改采用同一规则，确定性检查会将可安全改写的句子改为直接结论；只有导航意义或无法安全改写的句子保留在来源笔记，并在提纲中提示核对。无需增加模型调用。已有 v0.8/v0.9 提纲项目可使用「保存署名并自动重排当前项目」应用修复；手工修改冲突保护与原稿、历史保留不变。

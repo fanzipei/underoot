@@ -5,6 +5,7 @@ import {DatabaseSync}from'node:sqlite';
 import path from'node:path';
 import fs from'node:fs';
 import {renderEditorial as legacyRender}from'../skills/underoot-paper-publishing/scripts/render-editorial-v2.mjs';
+import {renderEditorial as v3Render}from'../skills/underoot-paper-publishing/scripts/render-editorial-v3.mjs';
 import {publishingStyles}from'../extensions/builtin/underoot.publishing/styles.mjs';
 const BASE=process.env.BASE_URL;let checks=0,calls=0,lastInput,malformed=false;
 const check=(name,value)=>{assert.ok(value,name);checks++;console.log('✓',name);};
@@ -12,7 +13,7 @@ async function req(url,cookie='',method='GET',body){const r=await fetch(BASE+url
 const owner=(await req('/api/auth/login','','POST',{email:'demo@latex.studio',password:'demo1234'})).cookie;
 const admin=(await req('/api/auth/login','','POST',{email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_PASSWORD})).cookie;
 const mock=http.createServer(async(r,res)=>{let raw='';for await(const b of r)raw+=b;const request=JSON.parse(raw);calls++;const input=JSON.parse(request.messages[1].content);lastInput=input;
- const content=input.request?malformed?{page:{title:'unsafe',takeaway:'x',bullets:[],layout:'visual',figurePath:'../../secret'}}:{explanation:'Shortened the chosen block while retaining its experimental condition.',page:{title:'Measured result under stated conditions',takeaway:'Result 94 under the stated sample.',bullets:['Baseline 91; sample remains restricted.','Please verify uncertainty in source.'],layout:'comparison',figurePath:''}}:input.nodes?{sections:input.nodes.map((n,i)=>({title:['Research question','Method','Results','Limitations'][i%4],takeaway:n.summary.slice(0,130),bullets:[n.summary.slice(0,160)],sourceIds:n.ids}))}:{summary:input.text?'Result 94 with baseline 91; the restricted sample limits generalization.':'Restricted findings.'};
+ const content=input.request?malformed?{page:{title:'unsafe',takeaway:'x',bullets:[],layout:'visual',figurePath:'../../secret'}}:{explanation:'Shortened the chosen block while retaining its experimental condition.',page:{title:'Measured result under stated conditions',takeaway:'Result 94 under the stated sample.',bullets:['Baseline 91; sample remains restricted.','Please verify uncertainty in source.','Figure~[fig:framework] summarizes SCaDiff.'],layout:'comparison',figurePath:''}}:input.nodes?{sections:input.nodes.map((n,i)=>({title:['Research question','Method','Results','Limitations'][i%4],takeaway:n.summary.slice(0,130),bullets:[n.summary.slice(0,160),'Figure~[fig:framework] summarizes SCaDiff.'],sourceIds:n.ids}))}:{summary:input.text?'Result 94 with baseline 91; the restricted sample limits generalization.':'Restricted findings.'};
  res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(content)}}]}));});
 mock.listen(0,'127.0.0.1');await once(mock,'listening');
 try{
@@ -21,6 +22,7 @@ try{
  const project=(await req('/api/projects',owner,'POST',{name:'Outline studio '+kind,template:'blank'})).data.project;
  const base=`/api/workspace/projects/${project.id}/derive`;
  let main='\\documentclass{article}\n\\title{Bounded research communication}\n\\author{Test author}\n\\begin{document}\n\\section{Research question}\nWhat changes under a restricted sample?\n\\section{Method}\nWe compare two methods on the same sample.\n\\section{Results}\nMeasured result 94 with baseline 91.\n\\section{Limitations}\nThe sample is restricted; uncertainty is not estimated.\n\\end{document}';
+ main=main.replace('\\author{Test author}\n','').replace('\\begin{document}','\\begin{document}\n\\author{Source Alice}\\affiliation{\\institution{Source University}}\n\\author{Source Bob}\\affiliation{\\institution{Source Lab}}\n\\maketitle');
  main=main.replace('\\end{document}',String.raw`\begin{table}\caption{Measured comparison.}\begin{tabular}{lr}Method & Score \\ Baseline & 91 \\ Proposed & 94 \\ \end{tabular}\end{table}\end{document}`);
  await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:main});
  const plan=(await req(base+'/plan',owner)).data;
@@ -34,7 +36,11 @@ try{
  check(kind+' table-only evidence retained in editable outline',draft.pages.some(p=>p.tables?.length&&(kind==='poster'||(!p.bullets.length&&!p.takeaway))));
  check(kind+' whole-paper AI called only at outline stage',calls-beforeCalls===plan.modelCalls);
  const url=base+'/drafts/'+draft.id;
+ check(kind+' title block authors populate without manual input',draft.identity.authors.includes('Source Alice')&&draft.identity.authors.includes('Source Bob')&&draft.identity.affiliations.includes('Source Lab'));
+ check(kind+' AI outline strips original paper figure navigation',!JSON.stringify(draft.pages).includes('summarizes SCaDiff'));
  check(kind+' outline does not expose manuscript chunks',!draft.plan&&!draft.summary);
+ const repair=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const repairPayload=JSON.parse(repair.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);repairPayload.editorial.identity={...repairPayload.editorial.identity,authors:'',affiliations:'',contact:''};repairPayload.plan.identity={...repairPayload.editorial.identity};repairPayload.plan.author='';repair.prepare('UPDATE publishing_sessions SET payload=? WHERE id=?').run(JSON.stringify(repairPayload),draft.id);repair.close();draft=(await req(url,owner)).data;
+ check(kind+' existing incomplete draft recovers title metadata',draft.identity.authors.includes('Source Bob')&&draft.identity.affiliations.includes('Source University'));
  check(kind+' draft is discoverable',(await req(base+'/drafts',owner)).data.sessions.some(s=>s.id===draft.id));
  const persisted=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'),{readOnly:true});const row=persisted.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id);persisted.close();check(kind+' review survives process memory loss',JSON.parse(row.payload).editorial.pages[0].title===draft.pages[0].title);
  check(kind+' unconfirmed outline cannot generate',(await req(base+'/jobs',owner,'POST',{draftId:draft.id,version:draft.version})).status===409);
@@ -61,11 +67,11 @@ try{
  check(kind+' generated identity contains all authors and units',['Alice Example','Bob Example','Example University','Example Institute'].every(s=>original.includes(s)));
  const qr=await fetch(BASE+`/api/projects/${derived}/raw?path=${encodeURIComponent(draft.identity.qrPath)}`,{headers:{cookie:owner}});const qrBytes=Buffer.from(await qr.arrayBuffer());check(kind+' QR is generated locally as a real PNG',qr.status===200&&qrBytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])));
  // Recreate the v0.8 session format to exercise upgrade/reflow of existing outputs.
- const migration=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const payload=JSON.parse(migration.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);delete payload.rendererVersion;delete payload.editorial.identity;
- const legacy=legacyRender({...payload.plan,editorial:payload.editorial},payload.options,publishingStyles[kind].find(s=>s.id===payload.options.style));migration.prepare('UPDATE publishing_sessions SET payload=? WHERE id=?').run(JSON.stringify(payload),draft.id);migration.close();await req(file,owner,'PUT',{content:legacy});
+ const migration=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const payload=JSON.parse(migration.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);if(kind==='slides'){delete payload.rendererVersion;delete payload.editorial.identity;}else payload.rendererVersion=3;
+ const legacy=(kind==='slides'?legacyRender:v3Render)({...payload.plan,editorial:payload.editorial},payload.options,publishingStyles[kind].find(s=>s.id===payload.options.style));migration.prepare('UPDATE publishing_sessions SET payload=? WHERE id=?').run(JSON.stringify(payload),draft.id);migration.close();await req(file,owner,'PUT',{content:legacy});
  const derivedBase=`/api/workspace/projects/${derived}/derive`;
  const reflow=await req(derivedBase+'/jobs',owner,'POST',{phase:'reflow',draftId:draft.id,version:draft.version,confirmed:true,identity});const refitted=await wait(reflow.data.id,derivedBase);if(refitted.status!=='complete')console.error(refitted);
- check(kind+' v0.8 outputs can reflow in the same project',refitted.status==='complete'&&refitted.result.draft.projectId===derived);draft=refitted.result.draft;original=(await req(file,owner)).data.content;
+ check(kind+' legacy v0.8/v0.9 outputs can reflow in the same project',refitted.status==='complete'&&refitted.result.draft.projectId===derived);draft=refitted.result.draft;original=(await req(file,owner)).data.content;
  check(kind+' reflow retains every author and institution',['Alice Example','Bob Example','Example University','Example Institute'].every(s=>original.includes(s)));
  check(kind+' generated TeX contains approved content and stable markers',original.includes('A user-reviewed research question')&&original.includes('% underoot:block:'));
  check(kind+' source snapshot preserved',(await req(`/api/projects/${derived}/file?path=main.tex`,owner)).data.content===main);
@@ -74,6 +80,7 @@ try{
  check(kind+' generated outline cannot silently overwrite whole TeX',(await req(dest,owner,'PUT',{version:draft.version,pages:draft.pages})).status===409);
  check(kind+' chat requires consent',(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:draft.pages[0].id,message:'shorten'})).status===400);
  draft=(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:draft.pages[0].id,message:'Use a comparison layout, retain experimental conditions.',consent:true})).data;
+ check(kind+' chat proposal strips paper-only references',!JSON.stringify(draft.proposal.page).includes('summarizes SCaDiff'));
  check(kind+' proposal leaves TeX unchanged',(await req(file,owner)).data.content===original&&draft.proposal?.page.layout==='comparison');
  check(kind+' chat context contains only selected page and bounded evidence',lastInput.page.id===draft.pages[0].id&&!lastInput.nodes&&!lastInput.text&&lastInput.evidence.length<=3&&JSON.stringify(lastInput).length<12000);
  draft=(await req(dest+'/decide',owner,'POST',{version:draft.version,proposalId:draft.proposal.id,accept:false})).data;

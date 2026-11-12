@@ -6,7 +6,7 @@ const parsed=publicationIdentity(String.raw`% \author{Not an author}
 \author[1]{Alice \textbf{Example}}\author[2]{Bob Example}
 \affil[1]{Example University}\affil[2]{Example Institute}
 \email{alice@example.test}\email{bob@example.test}
-\begin{document}\author{Not metadata}\end{document}`);
+\begin{document}\maketitle\author{Not metadata}\end{document}`);
 check('all author declarations retain institution indices',parsed.authors==='[1] Alice Example\n[2] Bob Example');
 check('all affiliations retained',parsed.affiliations==='[1] Example University\n[2] Example Institute');
 check('all contacts retained',parsed.contact.includes('alice@example.test')&&parsed.contact.includes('bob@example.test'));
