@@ -1,5 +1,6 @@
 import {execFile}from'node:child_process';import{promisify}from'node:util';import path from'node:path';
 import{compileProject,detectEngines}from'../../../server/compile.js';import{projectDir,which}from'../../../server/paths.js';
+import{measurements}from'../../../skills/underoot-paper-publishing/scripts/fit-layout.mjs';
 const execute=promisify(execFile);
 export async function auditDraft(id,entry,options,{check=()=>{},progress=()=>{}}={}){
  if(!detectEngines().engines.some(e=>e.id==='xelatex'))return{status:'unavailable',reason:'主机未安装 XeLaTeX；请在浏览器用本地 WASM XeLaTeX 编译，再运行 skill 的 PDF 检查。',visualInspection:'not-run'};
@@ -16,5 +17,5 @@ export async function auditDraft(id,entry,options,{check=()=>{},progress=()=>{}}
   }catch{boundsStatus='failed';}
  }
  const issues=[];if(!compiled.ok)issues.push('LaTeX 编译失败');if(overflows.some(w=>w.points>1))issues.push('TeX 检测到内容溢出');if(pages===0)issues.push('未能识别有效 PDF 页面');if(options.kind==='poster'&&pages!==null&&pages!==1)issues.push(`海报占用了 ${pages} 页`);if(outside)issues.push('文本超出 PDF 页面边界');
- return{status:issues.length?'needs-review':'passed',engine:'xelatex',pages,boundsStatus,outsideText:outside,overflowWarnings:overflows,issues,errors:compiled.errors.map(e=>e.message).slice(0,5),visualInspection:'not-run'};
+ return{status:issues.length?'needs-review':'passed',engine:'xelatex',pages,boundsStatus,outsideText:outside,overflowWarnings:overflows,measurements:measurements(compiled.log),issues,errors:compiled.errors.map(e=>e.message).slice(0,5),visualInspection:'not-run'};
 }

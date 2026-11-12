@@ -1,6 +1,7 @@
 /** Standalone source-preserving publishing CLI. No API key or model dependency. */
 import fs from'node:fs';import path from'node:path';import{spawnSync}from'node:child_process';import{fileURLToPath}from'node:url';
 import{expandPaper,paperPlan,plainText}from'./chunk-paper.mjs';import{sourceEvidence,argument}from'./source-evidence.mjs';import{summarizePaper}from'./summarize.mjs';import{editorialPlan}from'./editorial-plan.mjs';import{publishingOptions,renderPublication}from'./styles.mjs';
+import{fitPublication}from'./fit-layout.mjs';import{compileMeasured}from'./compile-measured.mjs';import{publicationIdentity}from'./publication-identity.mjs';
 const args=process.argv.slice(2);const value=(key,fallback)=>args.includes(key)?args[args.indexOf(key)+1]:fallback;
 if(!args.includes('--root')||!args.includes('--out')||!args.includes('--kind'))throw Error('Usage: node build-publication.mjs --root <paper> --main main.tex --kind slides|poster --style <id> --out <new-output-directory> [--outline outline.json] [--compile] [--audit] [--render]');
 const root=fs.realpathSync(value('--root'));const main=value('--main','main.tex');const output=path.resolve(value('--out'));
@@ -29,15 +30,17 @@ if(args.includes('--outline')){
  }
  summary={...summary,sections:supplied.sections,aiNarrative:true};
 }
-const editorial=editorialPlan(plan,summary,options);fs.mkdirSync(output,{recursive:true,mode:0o700});
+const editorial=editorialPlan(plan,summary,options);editorial.identity=publicationIdentity(source,plan.author);fs.mkdirSync(output,{recursive:true,mode:0o700});
 for(const rel of plan.figures){const dest=path.resolve(output,rel);if(!dest.startsWith(output+path.sep))throw Error('Unsafe figure destination');fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync(safe(rel),dest);}
 fs.writeFileSync(path.join(output,entry),renderPublication({...plan,sections:summary.sections,editorial},options));
 fs.writeFileSync(path.join(output,'publishing-plan.json'),JSON.stringify({sourceRoot:root,sourceMain:main,mode:args.includes('--outline')?'reviewed-outline':'local-structured-draft',options,sourceDigest:plan.digest,editorial},null,2));
 fs.writeFileSync(path.join(output,'speaker-notes.md'),'# Source-linked presentation notes\n\n'+editorial.pages.map((p,i)=>`## ${i+1}. ${p.title}\n\n${p.takeaway}\n\n${p.bullets.map(b=>'- '+b).join('\n')}\n\nSources: ${p.sourceIds.join(', ')}\n\n${p.speakerNotes.map(n=>`${n.id}: ${n.summary}`).join('\n\n')}`).join('\n\n')+'\n\n# Review warnings\n\n'+editorial.warnings.map(w=>'- '+w).join('\n'));
 fs.appendFileSync(path.join(output,'speaker-notes.md'),'\n\n# Complete source chunk notes (including unshown details)\n\n'+summary.notes.map(n=>`## ${n.id} · ${n.title}\n\n${n.summary}`).join('\n\n'));
-if(args.includes('--compile'))for(let pass=0;pass<2;pass++){
- const result=spawnSync(value('--engine','xelatex'),['-interaction=nonstopmode','-halt-on-error','-no-shell-escape',entry],{cwd:output,encoding:'utf8',windowsHide:true,timeout:60000,maxBuffer:4000000});
- if(result.status!==0)throw Error('Compilation failed; inspect '+path.join(output,entry.replace(/\.tex$/,'.log'))+'\n'+(result.error?.message||result.stdout?.slice(-2000)||''));
+if(args.includes('--compile')){
+ const layout=await fitPublication({...plan,editorial},options,{render:renderPublication,write:content=>fs.writeFileSync(path.join(output,entry),content),audit:async()=>compileMeasured(output,entry,options.kind,{engine:value('--engine','xelatex'),requirePdfAudit:args.includes('--audit')})});
+ fs.writeFileSync(path.join(output,'layout-iterations.json'),JSON.stringify(layout,null,2));
+ fs.writeFileSync(path.join(output,'publishing-plan.json'),JSON.stringify({sourceRoot:root,sourceMain:main,options,editorial,layout},null,2));
+ if(layout.errors?.length)throw Error('Compilation failed; inspect layout-iterations.json');
 }
 if(args.includes('--audit')){
  const script=fileURLToPath(new URL('./audit-publication.py',import.meta.url));const stem=entry.replace(/\.tex$/,'');const command=['--pdf',path.join(output,stem+'.pdf'),'--kind',options.kind,'--log',path.join(output,stem+'.log'),'--out',path.join(output,'pdf-audit.json')];if(args.includes('--render'))command.push('--render-dir',path.join(output,'preview'));

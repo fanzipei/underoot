@@ -21,3 +21,10 @@ Physical sizes are venue-specific. [ICML 2025 instructions](https://icml.cc/Conf
 4. Continue in the existing generated project. Send only the selected block, bounded source evidence and recent discussion to the model. Show the proposal before applying it; accept/reject is an author decision.
 5. Preserve stable block IDs in generated TeX. Replace only the accepted block; keep unrelated source bytes and assets. Check the file hash and outline revision after asynchronous work. On conflict, retain manual edits and ask for a new proposal. Record accepted edits in project history.
 6. Recompile after substantive changes. Check actual pages and visual composition. Local bounded editing reduces model context; it does not independently verify all scientific claims or automatically judge figure semantics.
+
+
+## Panel typography and alignment (0.9)
+
+[MIT Biological Engineering Communication Lab — Research Poster: Design](https://mitcommlab.mit.edu/be/commkit/research-poster-design/) emphasizes readable type, restrained formatting, clear text hierarchy, figures and deliberate line breaks/list structure. We apply those principles through a default sans-serif poster body (while retaining an explicitly selected serif editorial style), aligned inset text, colored heading rules and readable list indentation. This is our implementation choice, not a copied MIT template or use of MIT branding.
+
+The user's requested full-panel layout is an additional constraint: fill the poster's body with aligned module borders, then adjust actual content sizes and internal spacing. Keep header and image captions close to their content groups. Natural content occupancy and panel-box coverage must be reported as separate metrics; a 100% border coverage value is not proof of dense content or good scientific communication.

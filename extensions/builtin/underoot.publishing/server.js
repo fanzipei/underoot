@@ -18,6 +18,9 @@ import {sourceEvidence,argument}from'../../../skills/underoot-paper-publishing/s
 import {editorialPlan}from'../../../skills/underoot-paper-publishing/scripts/editorial-plan.mjs';
 import{auditDraft}from'./layout-audit.mjs';
 import{posterFontFor}from'../../../skills/underoot-paper-publishing/scripts/render-editorial.mjs';
+import{publicationIdentity}from'../../../skills/underoot-paper-publishing/scripts/publication-identity.mjs';
+import{fitPublication}from'../../../skills/underoot-paper-publishing/scripts/fit-layout.mjs';
+import{imageAssets,materializeBranding}from'./branding.mjs';
 export { publishingStyles };
 export const plainLatex = plainText;
 export function expandedSource(project) { return expandPaper(projectDir(project.id), project.main_file).source; }
@@ -26,7 +29,7 @@ export function prepare(project, root = projectDir(project.id)) {
  const expanded = expandPaper(root, project.main_file);
  const source = expanded.source;
  const title = plainText(argument(source,'title')?.value || project.name);
- const author = plainText(argument(source,'author')?.value || '');
+ const identity=publicationIdentity(source);const author=identity.authors;
  const figures = [];
  const prefixes = [...source.matchAll(/\\graphicspath\{((?:\{[^}]*\})+)\}/g)].flatMap((m) => [...m[1].matchAll(/\{([^}]*)\}/g)].map((p) => p[1]));
  for (const match of source.matchAll(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g)) {
@@ -36,10 +39,10 @@ export function prepare(project, root = projectDir(project.id)) {
    try { if (fs.statSync(resolveInside(root, rel)).isFile() && !figures.includes(rel)) figures.push(rel); } catch { /* absent */ }
   }
  }
- const selected = figures.slice(0,8);
+ const selected = figures.slice(0,32);
  const digest = hash(source + JSON.stringify(selected.map((rel) => [rel,hash(fs.readFileSync(resolveInside(root,rel)))])));
  const plan=paperPlan(source,{title,author,files:expanded.files,warnings:expanded.warnings});
- return { ...plan, digest, figures:selected,...sourceEvidence(source,plan.chunks,selected) };
+ return { ...plan, digest, figures:selected,identity,assets:imageAssets(root),...sourceEvidence(source,plan.chunks,selected) };
 }
 export function publishingPlan(project,userId) {
  flushProject(project.id);
@@ -75,18 +78,12 @@ export async function deriveProject(project, userId, body, runtime = {}) {
   check(); runtime.progress?.({ phase:'render', message:'正在应用确认的风格并保存独立项目', modelCalls:summary.modelCalls });
   const editorial=runtime.approved?.editorial || editorialPlan(plan,summary,options);
   if(options.kind==='poster')editorial.posterFont=posterFontFor(editorial,options,options.customTemplate||publishingStyles.poster.find(s=>s.id===options.style));
-  const content = renderPublication({ ...plan, sections:summary.sections,editorial }, options);
+  editorial.identity=editorial.identity||plan.identity||publicationIdentity(plan.chunks.map(c=>c.text).join(''),plan.author);
   fs.mkdirSync(dir, { recursive:true }); materialize(source, dir);
+  await materializeBranding(dir,editorial.identity,runtime.approved?.uploadedAssets||[]);check();
   let entry = options.kind === 'slides' ? 'presentation.tex' : 'academic-poster.tex';
   if (fs.existsSync(resolveInside(dir,entry))) entry = `${options.kind}-${id.slice(0,8)}.tex`;
-  fs.writeFileSync(resolveInside(dir,entry),content,'utf8');
-  let layout=await auditDraft(id,entry,options,{check,progress:runtime.progress});
-  if(layout.status==='needs-review'&&options.kind==='poster'){
-   runtime.progress?.({phase:'revise',message:'海报版面检查发现问题，正在以不低于 32 pt 正文修订一次'});
-   editorial.posterFont=32;editorial.rounds[4].changes.push('根据真实编译反馈，将自适应海报正文调整至 32 pt 后复检一次');
-   fs.writeFileSync(resolveInside(dir,entry),renderPublication({...plan,sections:summary.sections,editorial},options),'utf8');
-   layout=await auditDraft(id,entry,options,{check,progress:runtime.progress});
-  }
+  const layout=await fitPublication({...plan,sections:summary.sections,editorial},options,{render:renderPublication,write:content=>fs.writeFileSync(resolveInside(dir,entry),content,'utf8'),audit:()=>auditDraft(id,entry,options,{check,progress:runtime.progress}),check,progress:runtime.progress});
   const reportPath = `underoot-publishing/${id}/plan.json`;
   const reportDir = resolveInside(dir,`underoot-publishing/${id}`); fs.mkdirSync(reportDir,{recursive:true});
   const { chunks, ...metadata } = plan;

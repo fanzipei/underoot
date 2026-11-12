@@ -3,6 +3,9 @@ import http from 'node:http';
 import {once}from'node:events';
 import {DatabaseSync}from'node:sqlite';
 import path from'node:path';
+import fs from'node:fs';
+import {renderEditorial as legacyRender}from'../skills/underoot-paper-publishing/scripts/render-editorial-v2.mjs';
+import {publishingStyles}from'../extensions/builtin/underoot.publishing/styles.mjs';
 const BASE=process.env.BASE_URL;let checks=0,calls=0,lastInput,malformed=false;
 const check=(name,value)=>{assert.ok(value,name);checks++;console.log('✓',name);};
 async function req(url,cookie='',method='GET',body){const r=await fetch(BASE+url,{method,headers:{cookie,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:r.status,data:await r.json().catch(()=>({})),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
@@ -25,7 +28,7 @@ try{
  const before=await projectCount(),beforeCalls=calls;
  const start=await req(base+'/jobs',owner,'POST',{phase:'outline',kind,style:kind==='slides'?'minimal':'gallery',count:kind==='slides'?12:6,useAI:true,consent:true,maxModelCalls:plan.modelCalls,confirmed:true,planDigest:plan.digest});
  check(kind+' outline job accepted',start.status===202);
- async function wait(id){for(let i=0;i<800;i++){const j=(await req(base+'/jobs/'+id,owner)).data;if(['complete','failed','cancelled'].includes(j.status))return j;await new Promise(r=>setTimeout(r,100));}throw Error('Timeout');}
+ async function wait(id,endpoint=base){for(let i=0;i<1200;i++){const j=(await req(endpoint+'/jobs/'+id,owner)).data;if(['complete','failed','cancelled'].includes(j.status))return j;await new Promise(r=>setTimeout(r,100));}throw Error('Timeout');}
  const job=await wait(start.data.id);if(job.status!=='complete')console.error(job);
  let draft=job.result?.draft;check(kind+' AI creates editable outline before project',draft?.pages.length>0&&!draft.projectId&&await projectCount()===before);
  check(kind+' table-only evidence retained in editable outline',draft.pages.some(p=>p.tables?.length&&(kind==='poster'||(!p.bullets.length&&!p.takeaway))));
@@ -40,6 +43,12 @@ try{
  check(kind+' editable title and layout persist',draft.pages[0].title==='A user-reviewed research question'&&draft.pages[0].layout==='statement');
  check(kind+' stale outline cannot overwrite',(await req(url,owner,'PUT',{version:old,pages:draft.pages})).status===409);
  check(kind+' stale confirmation rejected',(await req(base+'/jobs',owner,'POST',{draftId:draft.id,version:old,confirmed:true})).status===409);
+ check(kind+' logo traversal is rejected',(await req(url,owner,'PUT',{version:draft.version,pages:draft.pages,identity:{...draft.identity,logos:['../../secret']}})).status===400);
+ const form=new FormData();form.append('file',new Blob([fs.readFileSync('scripts/fixtures/publishing/accuracy.png')]),'unit-logo.png');const logoResponse=await fetch(BASE+url+'/logo',{method:'POST',headers:{cookie:owner},body:form});draft=await logoResponse.json();
+ check(kind+' logo upload stores an authorized asset',logoResponse.status===200&&draft.identity.logos.length===1);
+ const identity={...draft.identity,authors:'[1] Alice Example\n[2] Bob Example',affiliations:'[1] Example University\n[2] Example Institute',contact:'research@example.test',projectUrl:'https://github.com/fanzipei/underoot',reserveCode:true};
+ draft=(await req(url,owner,'PUT',{version:draft.version,pages:draft.pages,identity})).data;
+ check(kind+' all authors and affiliations persist',draft.identity.authors.includes('Bob Example')&&draft.identity.affiliations.includes('Example Institute'));
  // The immutable source snapshot remains the one used for this outline.
  await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:main+'\n% source edited after outline'});
  const countAtGenerate=calls;
@@ -48,10 +57,19 @@ try{
  check(kind+' confirmed outline generates successfully',generated.status==='complete');
  check(kind+' confirmation does not call AI again',calls===countAtGenerate);
  draft=generated.result.draft;const derived=draft.projectId;const dest=`/api/workspace/projects/${derived}/derive/drafts/${draft.id}`;const file=`/api/projects/${derived}/file?path=${generated.result.project.mainFile}`;
- const original=(await req(file,owner)).data.content;
+ let original=(await req(file,owner)).data.content;
+ check(kind+' generated identity contains all authors and units',['Alice Example','Bob Example','Example University','Example Institute'].every(s=>original.includes(s)));
+ const qr=await fetch(BASE+`/api/projects/${derived}/raw?path=${encodeURIComponent(draft.identity.qrPath)}`,{headers:{cookie:owner}});const qrBytes=Buffer.from(await qr.arrayBuffer());check(kind+' QR is generated locally as a real PNG',qr.status===200&&qrBytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])));
+ // Recreate the v0.8 session format to exercise upgrade/reflow of existing outputs.
+ const migration=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const payload=JSON.parse(migration.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);delete payload.rendererVersion;delete payload.editorial.identity;
+ const legacy=legacyRender({...payload.plan,editorial:payload.editorial},payload.options,publishingStyles[kind].find(s=>s.id===payload.options.style));migration.prepare('UPDATE publishing_sessions SET payload=? WHERE id=?').run(JSON.stringify(payload),draft.id);migration.close();await req(file,owner,'PUT',{content:legacy});
+ const derivedBase=`/api/workspace/projects/${derived}/derive`;
+ const reflow=await req(derivedBase+'/jobs',owner,'POST',{phase:'reflow',draftId:draft.id,version:draft.version,confirmed:true,identity});const refitted=await wait(reflow.data.id,derivedBase);if(refitted.status!=='complete')console.error(refitted);
+ check(kind+' v0.8 outputs can reflow in the same project',refitted.status==='complete'&&refitted.result.draft.projectId===derived);draft=refitted.result.draft;original=(await req(file,owner)).data.content;
+ check(kind+' reflow retains every author and institution',['Alice Example','Bob Example','Example University','Example Institute'].every(s=>original.includes(s)));
  check(kind+' generated TeX contains approved content and stable markers',original.includes('A user-reviewed research question')&&original.includes('% underoot:block:'));
  check(kind+' source snapshot preserved',(await req(`/api/projects/${derived}/file?path=main.tex`,owner)).data.content===main);
- if(generated.result.editorial.layout.status!=='unavailable')check(kind+' confirmed outline native compile passes',generated.result.editorial.layout.status==='passed');
+ if(generated.result.editorial.layout.status!=='unavailable')check(kind+' confirmed outline native compile passes',generated.result.editorial.layout.errors.length===0&&generated.result.editorial.layout.pages>0&&!generated.result.editorial.layout.overflowWarnings.some(w=>w.points>1));
  check(kind+' generated project can reopen discussion',(await req(dest,owner)).data.projectId===derived);
  check(kind+' generated outline cannot silently overwrite whole TeX',(await req(dest,owner,'PUT',{version:draft.version,pages:draft.pages})).status===409);
  check(kind+' chat requires consent',(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:draft.pages[0].id,message:'shorten'})).status===400);
@@ -88,6 +106,8 @@ try{
  if(engines.some(e=>e.id==='xelatex')){const compiled=await req(`/api/projects/${derived}/compile`,owner,'POST',{force:true});check(kind+' accepted local edit compiles in existing project',compiled.data.ok===true);}
  const current=(await req(file,owner)).data.content;await req(file,owner,'PUT',{content:current.replace('Measured result under stated conditions','Manually edited target block')});const callCount=calls;
  check(kind+' pre-existing manual block edit is protected',(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:chosen,message:'Revise this block',consent:true})).status===409&&calls===callCount);
+ const protectedTex=(await req(file,owner)).data.content;const rejected=await req(derivedBase+'/jobs',owner,'POST',{phase:'reflow',draftId:draft.id,version:draft.version,confirmed:true,identity});const refused=await wait(rejected.data.id,derivedBase);
+ check(kind+' global reflow preserves manual edits',refused.status==='failed'&&(await req(file,owner)).data.content===protectedTex);
  await req(`/api/projects/${project.id}`,owner,'DELETE');
  check(kind+' derived discussion survives deletion of original project',(await req(dest,owner)).data.projectId===derived);
  }

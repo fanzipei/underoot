@@ -1,13 +1,13 @@
 {
   "id": "underoot.publishing",
   "name": "学术传播与投稿",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "apiVersion": 1,
   "runtime": "builtin",
   "entry": "activate.mjs",
   "author": "underoot",
   "license": "MIT",
-  "description": "先整理可编辑提纲、用户确认后生成；单页对话修订、接受/拒绝、真实编译检查与来源追溯。",
+  "description": "可编辑提纲、完整署名与单位图标、项目二维码；多轮实际编译排版与版心对齐，原项目内安全重排及对话修订。",
   "permissions": [
     "project.read",
     "ai.invoke"

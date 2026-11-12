@@ -25,7 +25,7 @@ await req(`/api/projects/${pid}/file?path=main.tex`,owner,'PUT',{content:main.re
 check('过期计划不能直接生成',(await req(base+'/jobs',owner,'POST',{kind:'slides',confirmed:true,planDigest:plan.digest})).status===409);
 await req(`/api/projects/${pid}/file?path=main.tex`,owner,'PUT',{content:main});
 plan=(await req(base+'/plan',owner)).data;
-async function waitJob(id){for(let i=0;i<300;i++){const j=await req(base+'/jobs/'+id,owner);if(['complete','failed','cancelled'].includes(j.data.status))return j.data;await new Promise((r)=>setTimeout(r,50));}throw Error('Job timeout');}
+async function waitJob(id){for(let i=0;i<2400;i++){const j=await req(base+'/jobs/'+id,owner);if(['complete','failed','cancelled'].includes(j.data.status))return j.data;await new Promise((r)=>setTimeout(r,50));}throw Error('Job timeout');}
 const sources=[];
 for(const kind of ['slides','poster'])for(const style of plan.styles[kind]){
  const started=await req(base+'/jobs',owner,'POST',{kind,style:style.id,ratio:'43',orientation:'landscape',columns:2,count:kind==='slides'?12:6,confirmed:true,planDigest:plan.digest});

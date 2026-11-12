@@ -494,3 +494,14 @@ Skill 可独立于应用数据库运行：[`SKILL.md`](skills/underoot-paper-pub
 本次五轮实际迭代、失败发现与修订记录见 [`docs/publishing-five-rounds.md`](docs/publishing-five-rounds.md)。回归使用合成论文和模拟模型；真实模型的学术表达质量仍取决于配置的服务与作者复核。
 
 真实会议案例、提纲确认与局部修订的具体取舍见 [会议参考记录](skills/underoot-paper-publishing/references/conference-casebook.md) 与 [实现及验证记录](docs/publishing-five-rounds.md)。
+
+
+### 0.9：自动排版与海报署名
+
+提纲工作台顶部可核对全部作者、单位编号和联系方式，选择/上传最多六个单位图标，填写 GitHub/GitLab/项目 HTTPS 链接后在本地生成二维码，也可只保留二维码区域。作者和单位在整张海报上居中，并采用更大的标题区字号。
+
+生成时进行多轮真实编译、空间测量和调整，尝试自然的图文尺寸、连续分栏、底部通栏结论与模块内部间距，使模块边框填满版心。新报告分别显示自然内容占用与边框覆盖；排版不额外调用模型。缺少 XeLaTeX 时明确报告未执行真实测量。
+
+v0.8 已生成且保留提纲的项目可再次打开工具，点击「保存署名并自动重排当前项目」，保留项目 ID 和历史。系统在隔离副本试排；发现手工修改或并发冲突时保留现有 TeX。更早没有持久提纲的输出仍可手动编辑。单位图标不会被自动下载或臆造。
+
+验证命令：`npm run test:publishing:fit`（纯逻辑与二维码）；`npm run test:publishing:studio`（隔离 API）；`npm run test:publishing:layout`（需要 XeLaTeX/Poppler，输出到系统临时 QA 目录）。
