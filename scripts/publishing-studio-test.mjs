@@ -1,0 +1,95 @@
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import {once}from'node:events';
+import {DatabaseSync}from'node:sqlite';
+import path from'node:path';
+const BASE=process.env.BASE_URL;let checks=0,calls=0,lastInput,malformed=false;
+const check=(name,value)=>{assert.ok(value,name);checks++;console.log('✓',name);};
+async function req(url,cookie='',method='GET',body){const r=await fetch(BASE+url,{method,headers:{cookie,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:r.status,data:await r.json().catch(()=>({})),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
+const owner=(await req('/api/auth/login','','POST',{email:'demo@latex.studio',password:'demo1234'})).cookie;
+const admin=(await req('/api/auth/login','','POST',{email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_PASSWORD})).cookie;
+const mock=http.createServer(async(r,res)=>{let raw='';for await(const b of r)raw+=b;const request=JSON.parse(raw);calls++;const input=JSON.parse(request.messages[1].content);lastInput=input;
+ const content=input.request?malformed?{page:{title:'unsafe',takeaway:'x',bullets:[],layout:'visual',figurePath:'../../secret'}}:{explanation:'Shortened the chosen block while retaining its experimental condition.',page:{title:'Measured result under stated conditions',takeaway:'Result 94 under the stated sample.',bullets:['Baseline 91; sample remains restricted.','Please verify uncertainty in source.'],layout:'comparison',figurePath:''}}:input.nodes?{sections:input.nodes.map((n,i)=>({title:['Research question','Method','Results','Limitations'][i%4],takeaway:n.summary.slice(0,130),bullets:[n.summary.slice(0,160)],sourceIds:n.ids}))}:{summary:input.text?'Result 94 with baseline 91; the restricted sample limits generalization.':'Restricted findings.'};
+ res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(content)}}]}));});
+mock.listen(0,'127.0.0.1');await once(mock,'listening');
+try{
+ await req('/api/workspace/ai/config',admin,'PUT',{baseUrl:`http://127.0.0.1:${mock.address().port}/v1`,model:'studio-mock',apiKey:'fixture'});
+ for(const kind of ['slides','poster']){
+ const project=(await req('/api/projects',owner,'POST',{name:'Outline studio '+kind,template:'blank'})).data.project;
+ const base=`/api/workspace/projects/${project.id}/derive`;
+ let main='\\documentclass{article}\n\\title{Bounded research communication}\n\\author{Test author}\n\\begin{document}\n\\section{Research question}\nWhat changes under a restricted sample?\n\\section{Method}\nWe compare two methods on the same sample.\n\\section{Results}\nMeasured result 94 with baseline 91.\n\\section{Limitations}\nThe sample is restricted; uncertainty is not estimated.\n\\end{document}';
+ main=main.replace('\\end{document}',String.raw`\begin{table}\caption{Measured comparison.}\begin{tabular}{lr}Method & Score \\ Baseline & 91 \\ Proposed & 94 \\ \end{tabular}\end{table}\end{document}`);
+ await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:main});
+ const plan=(await req(base+'/plan',owner)).data;
+ const projectCount=()=>req('/api/projects',owner).then(r=>r.data.projects.length);
+ const before=await projectCount(),beforeCalls=calls;
+ const start=await req(base+'/jobs',owner,'POST',{phase:'outline',kind,style:kind==='slides'?'minimal':'gallery',count:kind==='slides'?12:6,useAI:true,consent:true,maxModelCalls:plan.modelCalls,confirmed:true,planDigest:plan.digest});
+ check(kind+' outline job accepted',start.status===202);
+ async function wait(id){for(let i=0;i<800;i++){const j=(await req(base+'/jobs/'+id,owner)).data;if(['complete','failed','cancelled'].includes(j.status))return j;await new Promise(r=>setTimeout(r,100));}throw Error('Timeout');}
+ const job=await wait(start.data.id);if(job.status!=='complete')console.error(job);
+ let draft=job.result?.draft;check(kind+' AI creates editable outline before project',draft?.pages.length>0&&!draft.projectId&&await projectCount()===before);
+ check(kind+' table-only evidence retained in editable outline',draft.pages.some(p=>p.tables?.length&&(kind==='poster'||(!p.bullets.length&&!p.takeaway))));
+ check(kind+' whole-paper AI called only at outline stage',calls-beforeCalls===plan.modelCalls);
+ const url=base+'/drafts/'+draft.id;
+ check(kind+' outline does not expose manuscript chunks',!draft.plan&&!draft.summary);
+ check(kind+' draft is discoverable',(await req(base+'/drafts',owner)).data.sessions.some(s=>s.id===draft.id));
+ const persisted=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'),{readOnly:true});const row=persisted.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id);persisted.close();check(kind+' review survives process memory loss',JSON.parse(row.payload).editorial.pages[0].title===draft.pages[0].title);
+ check(kind+' unconfirmed outline cannot generate',(await req(base+'/jobs',owner,'POST',{draftId:draft.id,version:draft.version})).status===409);
+ const old=draft.version;draft.pages[0].title='A user-reviewed research question';draft.pages[0].layout='statement';
+ draft=(await req(url,owner,'PUT',{version:draft.version,pages:draft.pages})).data;
+ check(kind+' editable title and layout persist',draft.pages[0].title==='A user-reviewed research question'&&draft.pages[0].layout==='statement');
+ check(kind+' stale outline cannot overwrite',(await req(url,owner,'PUT',{version:old,pages:draft.pages})).status===409);
+ check(kind+' stale confirmation rejected',(await req(base+'/jobs',owner,'POST',{draftId:draft.id,version:old,confirmed:true})).status===409);
+ // The immutable source snapshot remains the one used for this outline.
+ await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:main+'\n% source edited after outline'});
+ const countAtGenerate=calls;
+ const generating=await req(base+'/jobs',owner,'POST',{draftId:draft.id,version:draft.version,confirmed:true});const generated=await wait(generating.data.id);
+ if(generated.status!=='complete')console.error(generated);
+ check(kind+' confirmed outline generates successfully',generated.status==='complete');
+ check(kind+' confirmation does not call AI again',calls===countAtGenerate);
+ draft=generated.result.draft;const derived=draft.projectId;const dest=`/api/workspace/projects/${derived}/derive/drafts/${draft.id}`;const file=`/api/projects/${derived}/file?path=${generated.result.project.mainFile}`;
+ const original=(await req(file,owner)).data.content;
+ check(kind+' generated TeX contains approved content and stable markers',original.includes('A user-reviewed research question')&&original.includes('% underoot:block:'));
+ check(kind+' source snapshot preserved',(await req(`/api/projects/${derived}/file?path=main.tex`,owner)).data.content===main);
+ if(generated.result.editorial.layout.status!=='unavailable')check(kind+' confirmed outline native compile passes',generated.result.editorial.layout.status==='passed');
+ check(kind+' generated project can reopen discussion',(await req(dest,owner)).data.projectId===derived);
+ check(kind+' generated outline cannot silently overwrite whole TeX',(await req(dest,owner,'PUT',{version:draft.version,pages:draft.pages})).status===409);
+ check(kind+' chat requires consent',(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:draft.pages[0].id,message:'shorten'})).status===400);
+ draft=(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:draft.pages[0].id,message:'Use a comparison layout, retain experimental conditions.',consent:true})).data;
+ check(kind+' proposal leaves TeX unchanged',(await req(file,owner)).data.content===original&&draft.proposal?.page.layout==='comparison');
+ check(kind+' chat context contains only selected page and bounded evidence',lastInput.page.id===draft.pages[0].id&&!lastInput.nodes&&!lastInput.text&&lastInput.evidence.length<=3&&JSON.stringify(lastInput).length<12000);
+ draft=(await req(dest+'/decide',owner,'POST',{version:draft.version,proposalId:draft.proposal.id,accept:false})).data;
+ check(kind+' rejection preserves project',(await req(file,owner)).data.content===original&&!draft.proposal);
+ const manual=original.replace('\\begin{document}','% custom preamble retained\n\\begin{document}')+'\n% hand-edited unselected content';
+ await req(file,owner,'PUT',{content:manual});
+ draft=(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:draft.pages[0].id,message:'Shorten selected block',consent:true})).data;
+ const proposalId=draft.proposal.id;draft=(await req(dest+'/decide',owner,'POST',{version:draft.version,proposalId,accept:true})).data;
+ const edited=(await req(file,owner)).data.content;
+ check(kind+' accepted revision stays in same project',draft.projectId===derived&&await projectCount()===before+1);
+ check(kind+' only chosen block changes',edited.includes('Measured result under stated conditions')&&edited.startsWith(manual.slice(0,manual.indexOf('% underoot:block:')))&&edited.endsWith('% hand-edited unselected content'));
+ const chosen=draft.pages[0].id,startMarker=`% underoot:block:${chosen}:start`,endMarker=`% underoot:block:${chosen}:end`;
+ const without=s=>s.slice(0,s.indexOf(startMarker))+s.slice(s.indexOf(endMarker)+endMarker.length);
+ check(kind+' all unselected TeX bytes preserved',without(edited)===without(manual));
+ check(kind+' stale acceptance cannot apply twice',(await req(dest+'/decide',owner,'POST',{version:draft.version-1,proposalId,accept:true})).status===409);
+ draft=(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:chosen,message:'Adjust again',consent:true})).data;
+ await req(file,owner,'PUT',{content:edited+'\n% concurrent collaborator edit'});
+ check(kind+' concurrent TeX editing prevents overwrite',(await req(dest+'/decide',owner,'POST',{version:draft.version,proposalId:draft.proposal.id,accept:true})).status===409);
+ check(kind+' concurrent edit remains',(await req(file,owner)).data.content.endsWith('% concurrent collaborator edit'));
+ malformed=true;check(kind+' unknown figure path rejected',(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:chosen,message:'Add figure',consent:true})).status===400);malformed=false;
+ await req(`/api/projects/${derived}/members`,owner,'POST',{email:process.env.ADMIN_EMAIL,role:'viewer'});
+ check(kind+' viewer cannot see private review session',(await req(dest,admin)).status===403);
+ check(kind+' viewer cannot apply proposal',(await req(dest+'/decide',admin,'POST',{version:draft.version,proposalId:draft.proposal.id,accept:true})).status===403);
+ await req(`/api/projects/${project.id}/members`,owner,'POST',{email:process.env.ADMIN_EMAIL,role:'editor'});
+ check(kind+' source editor cannot read private derived discussion',(await req(url,admin)).status===403);
+ check(kind+' unauthenticated request blocked',(await req(dest)).status===401);
+ check(kind+' original paper is intact',(await req(`/api/projects/${project.id}/file?path=main.tex`,owner)).data.content===main+'\n% source edited after outline');
+ const history=(await req(`/api/workspace/projects/${derived}/history`,owner)).data;check(kind+' accepted modifications recorded in history',JSON.stringify(history).includes('插件保存'));
+ const engines=(await req('/api/system/engines',owner)).data.engines;
+ if(engines.some(e=>e.id==='xelatex')){const compiled=await req(`/api/projects/${derived}/compile`,owner,'POST',{force:true});check(kind+' accepted local edit compiles in existing project',compiled.data.ok===true);}
+ const current=(await req(file,owner)).data.content;await req(file,owner,'PUT',{content:current.replace('Measured result under stated conditions','Manually edited target block')});const callCount=calls;
+ check(kind+' pre-existing manual block edit is protected',(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:chosen,message:'Revise this block',consent:true})).status===409&&calls===callCount);
+ await req(`/api/projects/${project.id}`,owner,'DELETE');
+ check(kind+' derived discussion survives deletion of original project',(await req(dest,owner)).data.projectId===derived);
+ }
+ console.log(`Publishing studio: ${checks}/${checks} passed`);
+}finally{await new Promise(r=>mock.close(r));}

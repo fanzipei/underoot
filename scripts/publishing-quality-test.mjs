@@ -14,10 +14,11 @@ const chinese=String.raw`\documentclass{ctexart}\title{固定预算下的稀疏�
 \section{局限}实验只包含两个数据集和五个随机种子。尚未检验跨领域迁移、标注质量以及不同群体的公平性。
 \section{结论}结果支持在已测试条件下使用稀疏观测。推广到新领域之前仍需进一步验证。\end{document}`;
 for(const kind of['slides','poster'])fixtures.push({id:kind+'-chinese',source:chinese,kind,style:kind==='slides'?'minimal':'modern',orientation:'portrait',columns:3,title:'固定预算下的稀疏采样研究'});
+for(const kind of['slides','poster'])for(const layout of['statement','comparison'])fixtures.push({id:kind+'-'+layout,source,kind,layout,style:kind==='slides'?'minimal':'gallery',orientation:'landscape',columns:2,title:'Source-grounded conference layout review'});
 for(const fixture of fixtures){
  const dir=path.join(out,fixture.id);fs.mkdirSync(dir,{recursive:true});fs.copyFileSync(path.join(root,'scripts/fixtures/publishing/accuracy.png'),path.join(dir,'accuracy.png'));
  const options=publishingOptions({...fixture,count:fixture.kind==='slides'?12:6});const plan=paperPlan(fixture.source,{title:fixture.title,author:'Synthetic Research Fixture'});Object.assign(plan,sourceEvidence(fixture.source,plan.chunks,['accuracy.png']));
- const summary=await summarizePaper(plan,options);const editorial=editorialPlan(plan,summary,options);let audit={status:'not-run'};
+ const summary=await summarizePaper(plan,options);const editorial=editorialPlan(plan,summary,options);if(fixture.layout)for(const page of editorial.pages)page.layout=fixture.layout;let audit={status:'not-run'};
  for(let attempt=1;attempt<=2;attempt++){
   fs.writeFileSync(path.join(dir,'main.tex'),renderPublication({...plan,sections:summary.sections,editorial},options));
   if(!available)break;

@@ -8,6 +8,7 @@ import { sourceFiles, failure, snapshot, history, revision, revisionDiff, create
 import { aiConfig, saveAiConfig, testAi, review, reviewPlan, suggestions, decideSuggestion, literature } from './assistant.js';
 import { deriveProject, retarget, publishingPlan } from './derive.js';
 import { startPublishing, publishingJob } from '../extensions/builtin/underoot.publishing/jobs.mjs';
+import {listSessions,getSession,saveSession,proposeSession,decideSession} from '../extensions/builtin/underoot.publishing/sessions.mjs';
 import { editReply } from './discussions.js';
 import { flushProject } from './collab.js';
 import { gitConfig, saveGitConfig, syncGit } from './git-sync.js';
@@ -97,6 +98,11 @@ workspaceRouter.post(`${prefix}/derive`, requireExtension('underoot.publishing')
  res.json(await deriveProject(req.project, req.user.id, req.body || {}));
 }));
 workspaceRouter.get(`${prefix}/derive/plan`, requireExtension('underoot.publishing'), editor, handle((req,res)=>res.json(publishingPlan(req.project,req.user.id))));
+workspaceRouter.get(`${prefix}/derive/drafts`,requireExtension('underoot.publishing'),editor,handle((req,res)=>res.json(listSessions(req.project,req.user.id))));
+workspaceRouter.get(`${prefix}/derive/drafts/:draft`,requireExtension('underoot.publishing'),editor,handle((req,res)=>res.json(getSession(req.project,req.user.id,req.params.draft))));
+workspaceRouter.put(`${prefix}/derive/drafts/:draft`,requireExtension('underoot.publishing'),editor,handle((req,res)=>res.json(saveSession(req.project,req.user.id,req.params.draft,req.body||{}))));
+workspaceRouter.post(`${prefix}/derive/drafts/:draft/chat`,requireExtension('underoot.publishing'),editor,handle(async(req,res)=>res.json(await proposeSession(req.project,req.user.id,req.params.draft,req.body||{}))));
+workspaceRouter.post(`${prefix}/derive/drafts/:draft/decide`,requireExtension('underoot.publishing'),editor,handle((req,res)=>res.json(decideSession(req.project,req.user.id,req.params.draft,req.body||{}))));
 workspaceRouter.post(`${prefix}/derive/jobs`, requireExtension('underoot.publishing'), editor, handle((req,res)=>res.status(202).json(startPublishing(req.project,req.user.id,req.body||{}))));
 workspaceRouter.get(`${prefix}/derive/jobs/:job`, editor, handle((req,res)=>res.json(publishingJob(req.project.id,req.user.id,req.params.job))));
 workspaceRouter.post(`${prefix}/derive/jobs/:job/cancel`, editor, handle((req,res)=>res.json(publishingJob(req.project.id,req.user.id,req.params.job,true))));

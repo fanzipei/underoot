@@ -1,11 +1,43 @@
 {
-  "id": "underoot.publishing", "name": "学术传播与投稿", "version": "0.7.0", "apiVersion": 1,
-  "runtime": "builtin", "entry": "activate.mjs", "author": "underoot", "license": "MIT",
-  "description": "完整论文到研究叙事、图文关联与可读版面，五步预检、真实编译审计与来源笔记；保留原稿和投稿分支。",
-  "permissions": ["project.read", "ai.invoke"],
-  "contributes": { "commands": [
-    { "id": "underoot.publishing.slides", "title": "生成 LaTeX Slides", "when": "editor", "handler": "publishing.slides" },
-    { "id": "underoot.publishing.poster", "title": "生成学术 Poster", "when": "editor", "handler": "publishing.poster" },
-    { "id": "underoot.publishing.template", "title": "转投 · 换模板（保留旧稿）", "when": "editor", "handler": "publishing.template" }
-  ] }
+  "id": "underoot.publishing",
+  "name": "学术传播与投稿",
+  "version": "0.8.0",
+  "apiVersion": 1,
+  "runtime": "builtin",
+  "entry": "activate.mjs",
+  "author": "underoot",
+  "license": "MIT",
+  "description": "先整理可编辑提纲、用户确认后生成；单页对话修订、接受/拒绝、真实编译检查与来源追溯。",
+  "permissions": [
+    "project.read",
+    "ai.invoke"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "underoot.publishing.slides",
+        "title": "生成 LaTeX Slides",
+        "when": "editor",
+        "handler": "publishing.slides"
+      },
+      {
+        "id": "underoot.publishing.poster",
+        "title": "生成学术 Poster",
+        "when": "editor",
+        "handler": "publishing.poster"
+      },
+      {
+        "id": "underoot.publishing.continue",
+        "title": "继续调整 Slides / Poster",
+        "when": "editor",
+        "handler": "publishing.slides"
+      },
+      {
+        "id": "underoot.publishing.template",
+        "title": "转投 · 换模板（保留旧稿）",
+        "when": "editor",
+        "handler": "publishing.template"
+      }
+    ]
+  }
 }

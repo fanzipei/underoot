@@ -4,14 +4,18 @@ import { publishingOptions } from './styles.mjs';
 import { failure } from '../../../server/project-history.js';
 import { aiConfig } from '../../../server/ai-service.js';
 import { listCustomTemplates } from '../../../server/publishing-templates.js';
+import {prepareSession,generateSession,getSession} from './sessions.mjs';
 const jobs = new Map();
 const active = (job) => ['queued','running'].includes(job.status);
 const expose = ({ controller, userId, ...job }) => job;
 export function startPublishing(project, userId, body) {
- const options = publishingOptions(body,listCustomTemplates(userId));
+ const draft=body.draftId?getSession(project,userId,body.draftId):null;
+ if(draft&&(!body.confirmed||body.version!==draft.version))throw failure(409,'请保存并确认当前提纲');
+ if(draft)body={...body,...draft.options,useAI:false,planDigest:'approved'};
+ const options = draft?.options || publishingOptions(body,listCustomTemplates(userId));
  if (body.confirmed !== true || !body.planDigest) throw failure(400,'请先查看分块计划并确认生成风格');
- const plan = publishingPlan(project,userId);
- if (plan.digest !== body.planDigest) throw failure(409,'稿件或插图已变化，请重新预览后确认');
+ const plan = draft?{digest:'approved'}:publishingPlan(project,userId);
+ if (!draft&&plan.digest !== body.planDigest) throw failure(409,'稿件或插图已变化，请重新预览后确认');
  if (body.useAI && (body.consent !== true || body.maxModelCalls !== plan.modelCalls)) throw failure(400,'请确认当前分块计划的模型调用次数');
  if (body.useAI && !aiConfig().configured) throw failure(503,'请先配置模型 API 或选择本地结构化草稿');
  for (const [id,job] of jobs) if (!active(job) && Date.now()-job.updatedAt>3600000) jobs.delete(id);
@@ -26,8 +30,9 @@ export function startPublishing(project, userId, body) {
   job.status='running';
   const timer=setTimeout(()=>job.controller.abort('timeout'),20*60*1000); timer.unref();
   try {
-   job.result=await deriveProject(project,userId,body,{signal:job.controller.signal,progress:(progress)=>{job.progress={...job.progress,...progress};job.updatedAt=Date.now();}});
-   job.status='complete'; job.progress={...job.progress,message:'已生成独立项目，原稿保留'};
+   const runtime={signal:job.controller.signal,progress:(progress)=>{job.progress={...job.progress,...progress};job.updatedAt=Date.now();}};
+   job.result=draft?await generateSession(project,userId,body.draftId,body,runtime):body.phase==='outline'?await prepareSession(project,userId,body,runtime):await deriveProject(project,userId,body,runtime);
+   job.status='complete'; job.progress={...job.progress,message:body.phase==='outline'?'提纲已保存，请编辑并确认':'已生成独立项目，原稿保留'};
   }catch(error){job.status=job.controller.signal.aborted?'cancelled':'failed';job.error=job.controller.signal.reason==='timeout'?'生成超过 20 分钟，已停止；原稿保留':job.controller.signal.aborted?'已取消生成，原稿保留':error.message;}
   finally{clearTimeout(timer);job.updatedAt=Date.now();}
  });

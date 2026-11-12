@@ -17,10 +17,11 @@ import { listCustomTemplates } from '../../../server/publishing-templates.js';
 import {sourceEvidence,argument}from'../../../skills/underoot-paper-publishing/scripts/source-evidence.mjs';
 import {editorialPlan}from'../../../skills/underoot-paper-publishing/scripts/editorial-plan.mjs';
 import{auditDraft}from'./layout-audit.mjs';
+import{posterFontFor}from'../../../skills/underoot-paper-publishing/scripts/render-editorial.mjs';
 export { publishingStyles };
 export const plainLatex = plainText;
 export function expandedSource(project) { return expandPaper(projectDir(project.id), project.main_file).source; }
-function prepare(project, root = projectDir(project.id)) {
+export function prepare(project, root = projectDir(project.id)) {
  if (!fs.existsSync(resolveInside(root, project.main_file))) throw failure(400, '论文主文件不存在，请先设置有效主文件');
  const expanded = expandPaper(root, project.main_file);
  const source = expanded.source;
@@ -52,9 +53,9 @@ function validateLatex(text) {
   return clean;
 }
 export async function deriveProject(project, userId, body, runtime = {}) {
- const options = publishingOptions(body,listCustomTemplates(userId));
+ const options = runtime.approved?.options || publishingOptions(body,listCustomTemplates(userId));
  if (body.useAI && body.consent !== true) throw failure(400, 'AI 转换需确认分块发送论文内容和预计调用次数');
- const source = snapshot(project.id, userId, `生成 ${options.kind} 前保留原稿`, 'derive');
+ const source = runtime.approved?.source || snapshot(project.id, userId, `生成 ${options.kind} 前保留原稿`, 'derive');
  const staged = fs.mkdtempSync(`${projectDir(project.id)}.publishing-`);
  const id = crypto.randomUUID(); const dir = projectDir(id);
  const check = () => {
@@ -65,14 +66,15 @@ export async function deriveProject(project, userId, body, runtime = {}) {
  };
  try {
   check(); materialize(source, staged);
-  const plan = prepare(project, staged);
+  const plan = runtime.approved?.plan || prepare(project, staged);
   if (body.planDigest && body.planDigest !== plan.digest) throw failure(409, '论文或插图已变化，请重新查看分块计划和确认风格');
   if (body.useAI && body.maxModelCalls !== plan.modelCalls) throw failure(400, '请先查看分块计划并确认模型调用次数');
-  const summary = await summarizePaper(plan, options, { useAI: !!body.useAI,
+  const summary = runtime.approved?.summary || await summarizePaper(plan, options, { useAI: !!body.useAI,
    model: (instruction,input) => callModel(instruction,input,[],{ timeout:60000,signal:runtime.signal }),
    progress: runtime.progress, check });
   check(); runtime.progress?.({ phase:'render', message:'正在应用确认的风格并保存独立项目', modelCalls:summary.modelCalls });
-  const editorial=editorialPlan(plan,summary,options);
+  const editorial=runtime.approved?.editorial || editorialPlan(plan,summary,options);
+  if(options.kind==='poster')editorial.posterFont=posterFontFor(editorial,options,options.customTemplate||publishingStyles.poster.find(s=>s.id===options.style));
   const content = renderPublication({ ...plan, sections:summary.sections,editorial }, options);
   fs.mkdirSync(dir, { recursive:true }); materialize(source, dir);
   let entry = options.kind === 'slides' ? 'presentation.tex' : 'academic-poster.tex';
