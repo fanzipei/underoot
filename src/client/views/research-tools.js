@@ -1,5 +1,6 @@
 import { EditorView } from '@codemirror/view';
 import { api } from '../api.js';
+import { openPublishing } from '../publishing.js';
 import { modal, toast, escapeHtml as e, confirmDialog, promptDialog, timeAgo } from '../ui.js';
 
 export function navigateProject(id, options = {}) {
@@ -319,23 +320,7 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
       if (rows[0]) await show(rows[0].id);
     } catch (error) { toast(error.message, 'err'); }
   }
-  async function openDerive(kind = 'slides') {
-    const status = await api.get('/api/workspace/ai/status');
-    const { root: m, close: closeModal } = modal({ title: '论文生成 Slides / Poster',
-      bodyHtml: `<div class="field"><label>生成类型</label><select class="input" id="derive-kind"><option value="slides">LaTeX Slides（16:9）</option><option value="poster">学术 Poster（A0）</option></select></div><label class="research-check"><input type="checkbox" id="derive-ai" ${status.configured ? '' : 'disabled'} />使用模型整理内容（将发送论文源码）</label><p class="src-note">生成一个独立项目，复制素材并保留原稿版本。规则转换是可编辑节选初稿；AI 转换仍需核对数字、引用与版面。不会覆盖当前论文。</p>`,
-      footerHtml: '<button class="btn" id="derive-cancel">取消</button><button class="btn btn-primary" id="derive-submit">生成新项目</button>',
-    });
-    m.querySelector('#derive-kind').value = kind;
-    m.querySelector('#derive-cancel').onclick = closeModal;
-    m.querySelector('#derive-submit').onclick = async (event) => {
-      const button = event.currentTarget; button.disabled = true; button.textContent = '正在生成…';
-      try {
-        const useAI = m.querySelector('#derive-ai').checked;
-        const result = await api.post(`${base}/derive`, { kind: m.querySelector('#derive-kind').value, useAI, consent: useAI });
-        closeModal(); toast(result.warning, 'ok'); navigateProject(result.project.id);
-      } catch (error) { toast(error.message, 'err'); button.disabled = false; button.textContent = '生成新项目'; }
-    };
-  }
+  async function openDerive(kind = 'slides') { return openPublishing(project, kind); }
   async function openTemplate() {
     const status = await api.get('/api/workspace/ai/status');
     const { root: m, close: closeModal } = modal({ title: '转投 · 更换论文模板',

@@ -53,12 +53,12 @@ export async function validateEndpoint(value, { allowQuery = false, allowLocal =
 }
 
 /** Pin validated DNS records and reject redirects; never forward credentials to a redirect. */
-export async function remoteJSON(rawUrl, { body, key, timeout = 90000, method, allow404 = false, maxResponse = 2 * 1024 * 1024, allowLocal } = {}) {
+export async function remoteJSON(rawUrl, { body, key, timeout = 90000, method, allow404 = false, maxResponse = 2 * 1024 * 1024, allowLocal, signal } = {}) {
   const { url, records } = await validateEndpoint(rawUrl, { allowQuery: true, allowLocal });
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
     const req = (url.protocol === 'https:' ? https : http).request(url, {
-      method: method || (body ? 'POST' : 'GET'), agent: false,
+      method: method || (body ? 'POST' : 'GET'), agent: false, signal,
       lookup: (_host, options, callback) => options.all ? callback(null, records) : callback(null, records[0].address, records[0].family),
       headers: { Accept: 'application/json', 'User-Agent': 'underoot/0.2', ...(key ? { Authorization: `Bearer ${key}` } : {}),
         ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}) },
@@ -107,13 +107,13 @@ export async function saveAiConfig(body, userId) {
   setSetting(CONFIG, JSON.stringify({ baseUrl, model, key, vision: body.vision === true }), userId);
   return aiConfig(true);
 }
-export async function callModel(instruction, input, images = []) {
+export async function callModel(instruction, input, images = [], options = {}) {
   const config = JSON.parse(getSetting(CONFIG)?.value || '{}');
   if (!aiConfig().configured) throw failure(503, '尚未配置模型 API，请管理员在 AI 配置中填写地址、模型及 API Key');
   const endpoint = config.baseUrl.endsWith('/chat/completions') ? config.baseUrl : config.baseUrl + '/chat/completions';
   const content = [{ type: 'text', text: JSON.stringify(input) }];
   if (config.vision) for (const image of images.slice(0, 4)) content.push({ type: 'image_url', image_url: { url: image, detail: 'auto' } });
-  const response = await remoteJSON(endpoint, { key: unseal(config.key), body: {
+  const response = await remoteJSON(endpoint, { key: unseal(config.key), timeout:options.timeout || 90000, signal:options.signal, body: {
     model: config.model,
     messages: [{ role: 'system', content: instruction }, { role: 'user', content: content.length === 1 ? content[0].text : content }],
     stream: false,
