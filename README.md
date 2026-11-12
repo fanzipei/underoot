@@ -329,13 +329,13 @@ npm run test:research # 隔离测试 AI 协议、权限、版本分支、转换�
 
 请求格式参考 [OpenAI Chat Completions 文档](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)，不绑定某家服务商或特定模型。生产环境默认仅连接公网 HTTPS API；若明确使用本地模型，管理员可设置 `LATEXSTUDIO_AI_ALLOW_LOCAL=1` 后重启。测试脚本仅在临时实例中开启此项，以运行模拟模型服务。
 
-- 「AI 检查」可发送当前稿件或源码选区，返回语言、论证、引用及图文一致性建议。PDF 工具栏圈选区域后，在弹窗里输入问题并选择「交给论文助手」，再发起审阅。
-- 圈选时会提取区域文字；勾选发送图片后，向支持视觉的模型发送圈选截图及最多 4 张项目 PNG/JPEG 插图。没有图像输入时不会假称已经检查图像。扫描 PDF 或纯图形区域需要视觉模型或手工补充问题上下文。
+- 「AI 检查」预览并发送当前段落或源码选区，返回语言、论证、引用及图文一致性建议。PDF 工具栏圈选区域后，在弹窗里输入问题并选择「交给论文助手」，再发起审阅。
+- 圈选时会提取区域文字；手动明确勾选时才发送圈选截图或最多 2 张项目 PNG/JPEG 插图。没有图像输入时不会假称已经检查图像。扫描 PDF 或纯图形区域需要视觉模型或手工补充问题上下文。
 - 每条建议展示文件位置、原文、替换预览和说明，可点击定位、接受或拒绝。可精确定位的补丁才会显示「接受并应用」；来源文件变化后拒绝覆盖。应用前后都保留项目版本。无法安全自动修改的意见需要作者手动落实。
 - 自动 AI 建议需要本次会话明确开启，默认关闭；会发送稿件并可能产生服务商费用，模型意见不会自动写入正文。
 - 「查找文献」由作者填写关键词，向 Crossref 检索真实元数据并提供 DOI 链接，不由模型编造书目。候选不等于已确认相关文献，仍需核对原文、补充 BibTeX 和正文引用。
 
-模型审阅最多发送约 10 万字符源码；视觉输入有数量/体积限制。模型质量、价格和可用性由配置的服务商决定。本次已用模拟服务测试协议、图片输入、密钥保护、异常响应和补丁闭环；真实模型效果需填写实际 Key 后验证。Crossref 已用公开测试关键词实测返回记录。
+模型审阅只发送有界片段：手动最多 6000 字符、自动最多 2200 字符；视觉输入有数量/体积限制。模型质量、价格和可用性由配置的服务商决定。本次已用模拟服务测试协议、图片输入、密钥保护、异常响应和补丁闭环；真实模型效果需填写实际 Key 后验证。Crossref 已用公开测试关键词实测返回记录。
 
 ### 共享与讨论
 
@@ -364,13 +364,16 @@ npm run test:research # 隔离测试 AI 协议、权限、版本分支、转换�
 
 ## 十三、插件平台与开发标准
 
-underoot 把身份、项目权限、编辑协作、讨论、项目版本、密钥托管与修改建议的接受机制保留为核心。研究能力通过命令贡献和受控 API 扩展，方便实验、分享与本地部署。首版已经拆出三个可独立启停的内置插件：
+underoot 把身份、项目权限、编辑协作、讨论、项目版本、密钥托管与修改建议的接受机制保留为核心。研究能力通过命令贡献和受控 API 扩展，方便实验、分享与本地部署。目前有六个可独立启停的内置插件：
 
 | 插件 | 提供的功能 | 实现位置 |
 | --- | --- | --- |
 | `underoot.assistant` | 论文检查、模型审阅、PDF 选区和文献候选 | `extensions/builtin/underoot.assistant/` |
 | `underoot.discovery` | 跨项目正文、文献和讨论搜索 | `extensions/builtin/underoot.discovery/` |
 | `underoot.publishing` | Slides、Poster、转投换模板 | `extensions/builtin/underoot.publishing/` |
+| `underoot.markdown` | Markdown 实时预览与 TeX 互转 | `extensions/builtin/underoot.markdown/` |
+| `underoot.templates` | 个人模板库与 PDF 风格提取 | `extensions/builtin/underoot.templates/` |
+| `underoot.vim` | Vim 编辑模式 | `extensions/builtin/underoot.vim/` |
 
 内置插件由应用源码可信分发；停用后相应后端接口也被禁用。它们的 `activate.mjs` 在命令注册表贡献入口，不再由菜单写死功能列表。第三方扩展使用另一种受限的 **iframe 运行时**，以 ZIP 安装，不执行服务器端代码。
 
@@ -418,6 +421,8 @@ HTML 加载 `/extensions/sdk.js` 后，可用 `underoot.getSelection()`、`getPr
 
 引擎、匹配的格式、基础宏包和字体均随项目分发，不调用外部编译服务或 SwiftLaTeX 资源网站。支持基础 article、数学、多文件和基本图形；10 MB / 500 文件上限。此基础包使用兼容的旧版 pdfTeX/LaTeX，并不等同于完整 TeX Live：现代会议模板、中文系统字体、XeTeX/LuaTeX 和额外宏包请选择原有服务器引擎。一次编译超过 45 秒会终止 Worker，避免页面卡死。浏览器需支持 WebAssembly，反向代理 CSP 应允许 `'wasm-unsafe-eval'`。第三方来源、源代码与许可证见 [`public/wasm/NOTICE.md`](public/wasm/NOTICE.md)。
 
+v0.5 补齐 `geometry`、`amsthm`、`booktabs`、`enumitem`、`caption`、`natbib`、`hyperref` 等常用论文宏包及依赖、图形驱动配置和 EC/CM-Super 字体。宏包从本站按需加载，不必把整个发行包下载到浏览器。失败时直接展示首个 TeX 错误、缺失文件和行号，可点击「切换服务器编译」；不会自动改变引擎或改写稿件。
+
 ### Markdown 研究写作插件
 
 在「更多 → Markdown 编辑与 TeX 互转」打开内置隔离插件。支持新建/打开 `.md`、`.markdown`、`.tex`，Markdown 左侧源码、右侧实时渲染；包含标题、列表、表格、代码与 KaTeX 数学。写作草稿留在插件中，点「保存到项目」并确认后写入；保存检查原文件 SHA-256，协作者已修改时拒绝覆盖，并保留快照与协同同步。外部图片和原始 HTML 受限制，避免预览泄露未发表内容。
@@ -433,7 +438,7 @@ v0.3 验证结果：ws4090l 基础回归 141/141、研究工作流 130/130、Git
 
 ## 十五、长论文自动拆分与风格确认（v0.3.1）
 
-从「更多 → 生成 LaTeX Slides / 生成学术 Poster」进入。界面先展示展开字符数、源码数、章节组和分块范围；选择风格、画幅/方向、栏数与目标篇幅，点击「确认风格并生成」。Slides 提供学术报告、极简研究、重点聚焦三种风格，支持 16:9 / 4:3；Poster 提供经典学术、清晰现代、紧凑数据三种风格，支持 A0 横竖版和两/三栏。
+从「更多 → 生成 LaTeX Slides / 生成学术 Poster」进入。界面先展示展开字符数、源码数、章节组和分块范围；选择风格、画幅/方向、栏数与目标篇幅，点击「确认风格并生成」。Slides 和 Poster 各有八种内置风格及个人模板扩展（见第十六节）；Slides 支持 16:9 / 4:3，Poster 支持 A0 横竖版和两/三栏。
 
 自动流程递归展开 `input/include`，按章节、段落和行分成最多 16,000 字符的块。超长环境可作为标注续段的传输片段，不会改写原 TeX 文件。已移除旧 12 万字符拒绝、AI 前 8 万字符和规则前 16 章截取；每个分块都会处理。AI 模式逐块摘要，按最多八份摘要一组递归汇总，最终章节必须覆盖全部来源 ID，遗漏会停止并报错。默认本地节选不调用模型；勾选 AI 后显示预计最大调用次数，确认才发送，事实与引用仍需作者核对。
 
@@ -449,3 +454,19 @@ npm run test:publishing
 ```
 
 CLI 的 `plan.json` 含完整源文分块，请作为论文私有数据保管。测试使用合成长稿和模拟模型，覆盖完整分块、长环境、Unicode、循环/越界、预算、取消、并行编辑、权限与六种风格真实编译；不会将现有生产论文发往模型。
+
+## 十六、轻量 AI 建议、模板扩展与 Vim
+
+编辑器按 `Alt+K` 打开当前段落的修改要求，先查看将发送的片段，再明确发送。建议在源码旁显示原文/替换预览，`Alt+Enter` 接受，`Esc` 关闭；来源变动会拒绝过期修改。助手保留全部建议与接受/忽略入口。默认只运行免费的本地检查。
+
+自动 AI 本会话默认关闭；开启后只响应本人的实际输入，至少修改 40 字符并停笔 45 秒才尝试。每次最多 2200 字符、2 条建议、550 输出 token，不附带图片或其他文件。手动最多 6000 字符、5 条建议、1200 输出 token。相同模型/指令/片段结果缓存 30 分钟，可跨偏移复用且不会恢复已拒绝的建议；自动间隔至少 90 秒，每用户 10 分钟最多自动 3 次，手动与自动合计 6 次、36000 稿件字符。预算/缓存存于内存，重启会清空；这是请求预算，不是服务商账单上限。自动调用错误会暂停，不自动重试。界面仅在服务商返回 `usage` 时显示实际 token。
+
+管理员可选输出限额字段 `max_completion_tokens`（默认）或 `max_tokens`（旧兼容服务）；不以付费重试猜测协议。字段含义见 [OpenAI Chat Completions 官方接口](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)。
+
+Slides 和 Poster 各有 8 种内置风格，生成前在卡片界面确认画幅、栏数与篇幅。Slides 包括学术报告、极简研究、重点聚焦、导航答辩、会议讲演、清爽组会、经典讲义、大标题叙事；Poster 包括经典、现代、紧凑、醒目横幅、图像优先、编辑风格、深色、蓝图。
+
+「更多 → Slides / Poster 模板库 · PDF 提取」可上传 ≤20 MB PDF。服务器用 Poppler 本地分析前三页的配色、字体层级、画幅与布局，显示第一页预览，可调整后确认保存个人模板；不调用模型，不保存原 PDF，不复制 Logo/图像，也无法无损恢复原始 TeX。每用户最多 40 个，支持导出/导入安全风格 JSON。Linux 安装 `poppler-utils`；Windows 安装 Poppler 后加入 PATH 或设置 `UNDEROOT_POPPLER_BIN`。缺少工具时会明确提示。
+
+第三方模板插件使用 `publishing.templates.read/write/extract` 与 SDK `templates.list/register/extractPdf`。宿主管理 PDF 选择和确认，沙箱仅接收安全风格字段。插件中心提供模板包 ZIP 示例；规范见 [`underoot-plugin-dev`](skills/underoot-plugin-dev/SKILL.md)。
+
+「更多 → Vim 编辑模式」或底部 VIM 开关启用 Normal / Insert / Visual 模式；支持 `:w` 编译保存，`u` / `Ctrl+r` 使用协作编辑的撤销/重做。默认关闭，按用户在本机记忆；只读成员不可编辑。管理员可在插件中心独立停用 Vim。

@@ -5,7 +5,7 @@ import multer from 'multer';
 import { db, memberRole, listProjectsForUser } from './db.js';
 import { requireAuth, requireAdmin } from './auth.js';
 import { sourceFiles, failure, snapshot, history, revision, revisionDiff, createBranch, checkout, mergePreview, mergeBranch } from './project-history.js';
-import { aiConfig, saveAiConfig, testAi, review, suggestions, decideSuggestion, literature } from './assistant.js';
+import { aiConfig, saveAiConfig, testAi, review, reviewPlan, suggestions, decideSuggestion, literature } from './assistant.js';
 import { deriveProject, retarget, publishingPlan } from './derive.js';
 import { startPublishing, publishingJob } from '../extensions/builtin/underoot.publishing/jobs.mjs';
 import { editReply } from './discussions.js';
@@ -79,7 +79,7 @@ workspaceRouter.get(`${prefix}/branches/:branch/merge-preview`, editor, handle((
 workspaceRouter.post(`${prefix}/branches/:branch/merge`, editor, handle((req, res) => res.json(mergeBranch(req.project.id, req.user.id, req.params.branch, req.body || {}))));
 
 workspaceRouter.get(`${prefix}/suggestions`, (req, res) => res.json({ suggestions: suggestions(req.project.id) }));
-const modelRequests = new Map();
+workspaceRouter.post(`${prefix}/review/plan`, requireExtension('underoot.assistant'), reviewer, handle((req,res)=>res.json(reviewPlan(req.project,req.body||{},req.user.id))));
 workspaceRouter.post(`${prefix}/review`, requireExtension('underoot.assistant'), reviewer, handle(async (req, res) => {
   const body = { ...(req.body || {}) };
   if (body.pdf) {
@@ -87,12 +87,7 @@ workspaceRouter.post(`${prefix}/review`, requireExtension('underoot.assistant'),
     if (!Number.isInteger(page) || page < 1 || page > 5000 || !rect || !['x', 'y', 'w', 'h'].every((k) => Number.isFinite(rect[k]) && rect[k] >= 0 && rect[k] <= 1) || rect.w <= 0 || rect.h <= 0) throw failure(400, 'PDF 圈选范围不合法');
     body.pdf = { page, rect };
   }
-  if (body.useAI) {
-    const last = modelRequests.get(req.user.id) || 0;
-    if (Date.now() - last < 15000) throw failure(429, '模型调用间隔至少 15 秒');
-    if (modelRequests.size > 1000) for (const [id, at] of modelRequests) if (Date.now() - at > 60000) modelRequests.delete(id);
-    modelRequests.set(req.user.id, Date.now());
-  }
+  body.actorId=req.user.id;
   res.json(await review(req.project, body));
 }));
 workspaceRouter.post(`${prefix}/literature`, requireExtension('underoot.assistant'), reviewer, handle(async (req, res) => res.json(await literature(req.project, req.body || {}))));
@@ -101,7 +96,7 @@ workspaceRouter.post(`${prefix}/derive`, requireExtension('underoot.publishing')
  if(req.body?.useAI) return res.status(202).json(startPublishing(req.project,req.user.id,req.body));
  res.json(await deriveProject(req.project, req.user.id, req.body || {}));
 }));
-workspaceRouter.get(`${prefix}/derive/plan`, requireExtension('underoot.publishing'), editor, handle((req,res)=>res.json(publishingPlan(req.project))));
+workspaceRouter.get(`${prefix}/derive/plan`, requireExtension('underoot.publishing'), editor, handle((req,res)=>res.json(publishingPlan(req.project,req.user.id))));
 workspaceRouter.post(`${prefix}/derive/jobs`, requireExtension('underoot.publishing'), editor, handle((req,res)=>res.status(202).json(startPublishing(req.project,req.user.id,req.body||{}))));
 workspaceRouter.get(`${prefix}/derive/jobs/:job`, editor, handle((req,res)=>res.json(publishingJob(req.project.id,req.user.id,req.params.job))));
 workspaceRouter.post(`${prefix}/derive/jobs/:job/cancel`, editor, handle((req,res)=>res.json(publishingJob(req.project.id,req.user.id,req.params.job,true))));

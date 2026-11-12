@@ -1,0 +1,1 @@
+{"id":"underoot.vim","name":"Vim 编辑模式","version":"0.5.0","apiVersion":1,"runtime":"builtin","entry":"activate.mjs","author":"underoot","license":"MIT","description":"可开关的 Vim normal / insert / visual 编辑、移动、选区与 :w 编译，保持项目协作。","permissions":[],"contributes":{"commands":[{"id":"underoot.vim.toggle","title":"Vim 编辑模式 · 开启 / 关闭","when":"editor","handler":"editing.vim"}]}}

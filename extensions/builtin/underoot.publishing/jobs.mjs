@@ -3,13 +3,14 @@ import { deriveProject, publishingPlan } from './server.js';
 import { publishingOptions } from './styles.mjs';
 import { failure } from '../../../server/project-history.js';
 import { aiConfig } from '../../../server/ai-service.js';
+import { listCustomTemplates } from '../../../server/publishing-templates.js';
 const jobs = new Map();
 const active = (job) => ['queued','running'].includes(job.status);
 const expose = ({ controller, userId, ...job }) => job;
 export function startPublishing(project, userId, body) {
- const options = publishingOptions(body);
+ const options = publishingOptions(body,listCustomTemplates(userId));
  if (body.confirmed !== true || !body.planDigest) throw failure(400,'请先查看分块计划并确认生成风格');
- const plan = publishingPlan(project);
+ const plan = publishingPlan(project,userId);
  if (plan.digest !== body.planDigest) throw failure(409,'稿件或插图已变化，请重新预览后确认');
  if (body.useAI && (body.consent !== true || body.maxModelCalls !== plan.modelCalls)) throw failure(400,'请确认当前分块计划的模型调用次数');
  if (body.useAI && !aiConfig().configured) throw failure(503,'请先配置模型 API 或选择本地节选');

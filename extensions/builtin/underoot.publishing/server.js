@@ -13,6 +13,7 @@ import { publishingOptions, publishingStyles, renderPublication } from './styles
 import { summarizePaper } from './summarize.mjs';
 import { flushProject } from '../../../server/collab.js';
 import { memberRole } from '../../../server/db.js';
+import { listCustomTemplates } from '../../../server/publishing-templates.js';
 export { publishingStyles };
 export const plainLatex = plainText;
 export function expandedSource(project) { return expandPaper(projectDir(project.id), project.main_file).source; }
@@ -35,10 +36,11 @@ function prepare(project, root = projectDir(project.id)) {
  const digest = hash(source + JSON.stringify(selected.map((rel) => [rel,hash(fs.readFileSync(resolveInside(root,rel)))])));
  return { ...paperPlan(source, { title, author, files:expanded.files, warnings:expanded.warnings }), digest, figures:selected };
 }
-export function publishingPlan(project) {
+export function publishingPlan(project,userId) {
  flushProject(project.id);
  const { chunks, ...plan } = prepare(project);
- return { ...plan, chunks: chunks.map(({text,...metadata}) => metadata), styles:publishingStyles };
+ const custom=userId?listCustomTemplates(userId):[];
+ return { ...plan, chunks: chunks.map(({text,...metadata}) => metadata), styles:Object.fromEntries(Object.entries(publishingStyles).map(([kind,styles])=>[kind,[...styles,...custom.filter((t)=>t.kind===kind)]])) };
 }
 function validateLatex(text) {
   const clean = String(text).replace(/^\s*```(?:latex|tex)?\s*/i, '').replace(/\s*```\s*$/, '');
@@ -46,7 +48,7 @@ function validateLatex(text) {
   return clean;
 }
 export async function deriveProject(project, userId, body, runtime = {}) {
- const options = publishingOptions(body);
+ const options = publishingOptions(body,listCustomTemplates(userId));
  if (body.useAI && body.consent !== true) throw failure(400, 'AI 转换需确认分块发送论文内容和预计调用次数');
  const source = snapshot(project.id, userId, `生成 ${options.kind} 前保留原稿`, 'derive');
  const staged = fs.mkdtempSync(`${projectDir(project.id)}.publishing-`);

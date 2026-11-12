@@ -3,8 +3,11 @@ import { modal, toast, escapeHtml as e, confirmDialog } from './ui.js';
 import { activate as assistant } from '../../extensions/builtin/underoot.assistant/activate.mjs';
 import { activate as discovery } from '../../extensions/builtin/underoot.discovery/activate.mjs';
 import { activate as publishing } from '../../extensions/builtin/underoot.publishing/activate.mjs';
+import { activate as templates } from '../../extensions/builtin/underoot.templates/activate.mjs';
+import { activate as vim } from '../../extensions/builtin/underoot.vim/activate.mjs';
+import {openTemplateLibrary}from'./template-library.js';
 
-const activators = { 'underoot.assistant': assistant, 'underoot.discovery': discovery, 'underoot.publishing': publishing };
+const activators = { 'underoot.assistant': assistant, 'underoot.discovery': discovery, 'underoot.publishing': publishing, 'underoot.templates':templates,'underoot.vim':vim };
 export const loadExtensions = async () => (await api.get('/api/extensions')).extensions;
 export const enabledExtension = (items, id) => items.some((item) => item.id === id && item.enabled);
 export function closeExtensionWindows() { document.querySelectorAll('.extension-window').forEach((window) => window.remove()); }
@@ -56,7 +59,12 @@ export function openExtension(extension, command, context) {
         if (!await confirmDialog({ title: `插件「${extension.name}」请求保存文档`, message: `文件：${String(args?.path || '')}\n${args?.hash === null ? '创建新文件' : '替换已有文件（保留历史）'}\n\n${String(args?.content || '').slice(0, 3000)}`, confirmText: '确认保存' })) throw new Error('作者取消了文档保存');
         body.consent = true;
       }
+      if(method==='publishing.templates.register'){
+       if(!extension.permissions.includes('publishing.templates.write'))throw Error('插件未声明模板注册权限');
+       if(!await confirmDialog({title:`插件「${extension.name}」请求保存个人模板`,message:`${String(args?.template?.name||'').slice(0,100)} · ${String(args?.template?.kind||'')}\n强调色 ${String(args?.template?.accent||'')}，背景 ${String(args?.template?.background||'')}。仅保存经过校验的视觉参数，不执行插件提供的 LaTeX。`,confirmText:'确认保存模板'}))throw Error('用户取消了模板注册');body.consent=true;
+      }
       const { result } = await api.post(`/api/extensions/${extension.id}/rpc`, body);
+      if(method==='publishing.templates.extract'&&result.hostPicker){const template=await openTemplateLibrary({kind:args?.kind==='poster'?'poster':'slides'});reply(id,{template});return;}
       if (method === 'ui.notify') toast(`${extension.name}：${result.message}`, 'ok');
       reply(id, result);
     } catch (error) { reply(id, null, error.message); }
@@ -90,7 +98,7 @@ export async function openExtensionsManager(user) {
       bodyHtml: `${admin ? `<div class="extension-install"><label for="extension-zip">安装插件 ZIP（≤10 MB）</label><input class="input" type="file" id="extension-zip" accept=".zip" /><button class="btn" id="extension-inspect">检查清单和权限</button><div id="extension-preview"></div></div>` : '<p class="src-note">所有成员可使用已启用的插件；只有管理员可安装、启停和卸载。</p>'}
         <p class="src-note">核心保留项目、协作、讨论、版本和凭据。下面的内置功能已作为可独立停用的插件提供；第三方 ZIP 使用隔离窗口和受控宿主 API。</p>
         <div id="extension-list">${data.extensions.map((extension) => `<article class="extension-card"><div><b>${e(extension.name)}</b> <span class="badge">${extension.builtin ? '内置插件' : 'ZIP 插件'}</span><span class="badge">${extension.enabled ? '已启用' : '已停用'}</span></div><div class="src-note">${e(extension.id)} · ${e(extension.version)} · ${e(extension.author)}</div><p>${e(extension.description)}</p><details><summary>权限声明（${extension.permissions.length}）</summary>${extension.permissions.map((p) => `<div>${e(data.permissions[p] || p)}</div>`).join('')}</details><div class="assistant-buttons">${admin ? `<button class="btn btn-sm" data-toggle-extension="${extension.id}" data-enabled="${extension.enabled}">${extension.enabled ? '停用' : '启用'}</button>` : ''}${!extension.builtin && extension.enabled ? `<a class="btn btn-sm" href="/api/extensions/${extension.id}/download">下载 ZIP 分享</a>` : ''}${admin && !extension.builtin ? `<button class="btn btn-sm" data-remove-extension="${extension.id}">卸载</button>` : ''}</div></article>`).join('')}</div>
-        <p class="src-note">示例插件：<a href="/api/extensions/examples/selection-notes/download">选区研究笔记 ZIP（无需模型）</a> · <a href="/api/extensions/examples/ai-claims/download">论证强度 AI 插件 ZIP</a> · <a href="/api/extensions/examples/markdown/download">Markdown 编辑与转换 ZIP</a>。开发规范和打包工具随 GitHub 仓库分发。</p>`,
+        <p class="src-note">示例插件：<a href="/api/extensions/examples/selection-notes/download">选区研究笔记 ZIP（无需模型）</a> · <a href="/api/extensions/examples/ai-claims/download">论证强度 AI 插件 ZIP</a> · <a href="/api/extensions/examples/markdown/download">Markdown 编辑与转换 ZIP</a> · <a href="/api/extensions/examples/template-pack/download">模板扩展与 PDF 提取 ZIP</a>。开发规范和打包工具随 GitHub 仓库分发。</p>`,
       footerHtml: '<button class="btn btn-primary" id="extension-done">完成</button>',
     });
     m.querySelector('#extension-done').onclick = () => { close(); if (changed) location.reload(); };

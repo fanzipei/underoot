@@ -14,6 +14,7 @@ import { storePluginSuggestion, suggestions } from './assistant.js';
 import { notifyDiscussion } from './discussions.js';
 import { broadcastAllProjects, broadcastProject, flushProject } from './collab.js';
 import { readDocument, writeDocument, convertDocument } from './documents.js';
+import {listCustomTemplates,registerTemplate}from'./publishing-templates.js';
 
 const EXT_DIR = path.join(DATA_DIR, 'extensions');
 const BUILTIN_DIR = path.join(ROOT, 'extensions', 'builtin');
@@ -106,7 +107,7 @@ extensionsRouter.get('/:id/download', handle((req, res) => {
   res.type('application/zip').send(zip.toBuffer());
 }));
 extensionsRouter.get('/examples/:name/download', handle((req, res) => {
-  if (!['selection-notes', 'ai-claims', 'markdown'].includes(req.params.name)) throw failure(404, '示例不存在');
+  if (!['selection-notes', 'ai-claims', 'markdown','template-pack'].includes(req.params.name)) throw failure(404, '示例不存在');
   const zip = new AdmZip(); zip.addLocalFolder(path.join(ROOT, 'examples', 'plugins', req.params.name));
   res.type('application/zip').set('Content-Disposition', `attachment; filename="${req.params.name}.zip"`).send(zip.toBuffer());
 }));
@@ -114,7 +115,8 @@ extensionsRouter.get('/examples/:name/download', handle((req, res) => {
 const methodPermission = { 'project.read': 'project.read', 'selection.read': 'selection.read', 'pdf.read': 'pdf.read',
   'ai.complete': 'ai.invoke', 'suggestions.propose': 'suggestions.propose', 'comments.list': 'comments.read', 'comments.add': 'comments.write',
   'storage.get': 'storage', 'storage.set': 'storage', 'ui.notify': null,
-  'documents.read': 'documents.read', 'documents.write': 'documents.write', 'documents.convert': 'documents.convert' };
+  'documents.read': 'documents.read', 'documents.write': 'documents.write', 'documents.convert': 'documents.convert',
+  'publishing.templates.list':'publishing.templates.read','publishing.templates.register':'publishing.templates.write','publishing.templates.extract':'publishing.templates.extract' };
 const calls = new Map();
 extensionsRouter.post('/:id/rpc', handle(async (req, res) => {
   const { manifest } = installed(req.params.id);
@@ -125,7 +127,7 @@ extensionsRouter.post('/:id/rpc', handle(async (req, res) => {
   if (permission && !manifest.permissions.includes(permission)) throw failure(403, `插件未声明权限：${permission}`);
   const args = req.body?.args || {};
   if (JSON.stringify(args).length > (method === 'ai.complete' ? 3200000 : 200000)) throw failure(413, '插件请求参数过大');
-  const needsProject = !method.startsWith('storage.') && method !== 'ui.notify';
+  const needsProject = !method.startsWith('storage.') && !method.startsWith('publishing.templates.') && method !== 'ui.notify';
   let project; let role;
   if (needsProject) {
     project = db.prepare('SELECT * FROM projects WHERE id=?').get(req.body?.projectId || '');
@@ -135,7 +137,10 @@ extensionsRouter.post('/:id/rpc', handle(async (req, res) => {
     if (method === 'documents.write' && !['owner','editor'].includes(role)) throw failure(403, '需要文档编辑权限');
   }
   let result;
-  if (method === 'documents.read') {
+  if(method==='publishing.templates.list')result={templates:listCustomTemplates(req.user.id)};
+  else if(method==='publishing.templates.register'){if(req.body.consent!==true)throw failure(400,'注册模板需用户确认');result={template:registerTemplate(req.user.id,args.template,'plugin')};}
+  else if(method==='publishing.templates.extract'){if(!extensionEnabled('underoot.templates'))throw failure(409,'PDF 模板提取扩展已停用');result={hostPicker:true};}
+  else if (method === 'documents.read') {
     if (args.path) result = readDocument(project, args.path);
     else { flushProject(project.id); result = { files: sourceFiles(project).filter((f) => /\.(md|markdown|tex)$/i.test(f.path)).map((f) => f.path) }; }
   } else if (method === 'documents.write') {

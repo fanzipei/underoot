@@ -1,0 +1,3 @@
+const q=(id)=>document.getElementById(id);const sdk=window.underoot;
+q('add').onclick=async()=>{try{await sdk.ready;const result=await sdk.templates.register({kind:q('kind').value,name:'研究室 · 松石',accent:'#176653',background:'#F5FAF7',font:'sans',header:'rule',columns:2,ratio:'169',orientation:'landscape'});q('status').textContent='已保存：'+result.template.name;}catch(e){q('status').textContent=e.message;}};
+q('pdf').onclick=async()=>{try{const result=await sdk.templates.extractPdf({kind:q('kind').value});q('status').textContent=result.template?'已选用：'+result.template.name:'用户未保存模板';}catch(e){q('status').textContent=e.message;}};

@@ -78,6 +78,11 @@ All methods are asynchronous; failures reject with `Error.message`. At most thre
 | `documents.read(path)` | `documents.read` | `{path,content,hash}`; at most 150 KB |
 | `documents.write({path,content,hash})` | `documents.write` | Author confirmation for each save; owner/editor only; null hash creates a new file, an existing SHA-256 hash replaces only that exact version; snapshots and CRDT sync preserved |
 | `documents.convert({from,content})` | `documents.convert` | `from` is `markdown` or `tex`; returns `{content,extension,warnings}` via sandboxed local Pandoc; does not save or overwrite anything |
+| `templates.list()` | `publishing.templates.read` | Current user's personal Slides / Poster style tokens |
+| `templates.register(template)` | `publishing.templates.write` | Host confirmation for each style registration; returns saved personal template, at most 40/user |
+| `templates.extractPdf({kind,name})` | `publishing.templates.extract` | Host opens PDF picker and local analysis UI; returns confirmed style tokens only; no raw PDF, image, model call or manuscript access |
+
+Templates contain safe fields: `kind` (`slides` / `poster`), `name`, `description`, hex `accent` / `background`, `font` (`sans` / `serif`), `header` (`plain` / `rule` / `band`), `density` (`comfortable` / `compact`), `ratio` (`169` / `43`), `orientation`, `columns` (2/3), `titleScale` (1.3–3.5). The host normalizes values and computes contrasting foreground. It does not accept arbitrary LaTeX, CSS, file paths or code. PDF extraction requires host Poppler and is an approximate visual template; original graphics, logos and macros are not recovered. `underoot.templates` must be enabled for registration/extraction. See `examples/plugins/template-pack`.
 
 Read-only members cannot invoke models, add comments or propose edits; reviewers may propose and discuss but cannot apply changes. AI calls are limited to one per plugin/user per 10 seconds. `images` accepts at most two PNG/JPEG base64 data URLs, each ≤2.5 million characters, total request ≤3.2 million characters; the configured model must have vision enabled. Ordinary arguments are limited to 200,000 characters. Keep scientific prompts smaller and state uncertainty rather than fabricate a source.
 

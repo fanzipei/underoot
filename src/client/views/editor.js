@@ -5,6 +5,7 @@ import { syntaxHighlighting, HighlightStyle, StreamLanguage, bracketMatching, in
 import { stex } from '@codemirror/legacy-modes/mode/stex';
 import { openGitSync } from '../git-sync.js';
 import { BrowserTeX } from '../wasm-compiler.js';
+import {openTemplateLibrary}from'../template-library.js';
 import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/autocomplete';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { lineNumbers, highlightActiveLineGutter, highlightActiveLine } from '@codemirror/view';
@@ -266,6 +267,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
             <span id="st-pos">行 1, 列 1</span>
             <span id="st-sel"></span>
             <span id="st-engine"></span>
+            <button id="vim-toggle" class="vim-toggle" title="Vim 编辑模式：normal / insert / visual；:w 编译保存" hidden>VIM OFF</button>
             <span style="margin-left:auto" id="st-collab">协同已连接</span>
           </div>
         </div>
@@ -306,6 +308,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
           </div>
           <div class="spacer"></div>
           <button class="btn btn-sm" id="btn-fix-clash" style="display:none">${icon('shield')}一键修复</button>
+          <button class="btn btn-sm" id="btn-wasm-server" style="display:none">切换服务器编译</button>
           <span id="log-summary" style="font-size:11.5px;color:var(--muted)"></span>
           <button class="btn btn-ghost btn-icon btn-sm" id="log-close" title="关闭">${icon('close')}</button>
         </div>
@@ -356,6 +359,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   const collabComp = new Compartment();
   const langComp = new Compartment();
   const commentComp = new Compartment();
+  const vimComp=new Compartment();let vimEnabled=false;let vimModule;
   let onDocChange = () => {};
 
   const view = new EditorView({
@@ -363,6 +367,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     state: EditorState.create({
       doc: '',
       extensions: [
+        vimComp.of([]),
         EditorState.readOnly.of(!canEdit),
         EditorView.editable.of(canEdit),
         lineNumbers(),
@@ -433,7 +438,16 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   };
   const extensionActions = { 'assistant.open': () => research.open(), 'discovery.search': openWorkspaceSearch,
     'publishing.slides': () => research.openDerive('slides'), 'publishing.poster': () => research.openDerive('poster'),
-    'publishing.template': () => research.openTemplate() };
+    'publishing.template': () => research.openTemplate(),'publishing.templates':()=>openTemplateLibrary(), 'editing.vim':()=>setVim(!vimEnabled) };
+  const vimButton=root.querySelector('#vim-toggle');const vimKey=`underoot.vim.${user.id}`;
+  async function setVim(value){
+   if(value&&(!canEdit||!enabledExtension(extensionList,'underoot.vim'))){toast('需要编辑权限且启用 Vim 插件','err');return;}
+   if(value&&!vimModule)vimModule=await import('../vim-mode.js');
+   view.dispatch({effects:vimComp.reconfigure(value?vimModule.vimMode(view,()=>compile(true),{undo:()=>docs.get(activePath)?.undo.undo(),redo:()=>docs.get(activePath)?.undo.redo()}):[])});
+   vimEnabled=value;if(!value)vimModule?.releaseVim(view);localStorage.setItem(vimKey,value?'1':'0');vimButton.textContent=value?'VIM ON':'VIM OFF';vimButton.setAttribute('aria-pressed',String(value));view.focus();
+  }
+  vimButton.hidden=!enabledExtension(extensionList,'underoot.vim');vimButton.disabled=!canEdit;vimButton.onclick=()=>setVim(!vimEnabled);
+  if(canEdit&&enabledExtension(extensionList,'underoot.vim')&&localStorage.getItem(vimKey)==='1')await setVim(true);
 
   /* ---------- 文件树 ---------- */
   function fileIcon(name) {
@@ -835,6 +849,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         if (msg.type === 'project:reset') location.reload();
         else api.get(`/api/projects/${projectId}`).then((data) => { if (data.project.role !== project.role) location.reload(); }).catch(() => { location.hash = '#/'; });
       } else if (msg.type === 'extensions:changed') {
+        loadExtensions().then((items)=>{extensionList=items;vimButton.hidden=!enabledExtension(items,'underoot.vim');if(vimEnabled&&!enabledExtension(items,'underoot.vim'))setVim(false);}).catch(()=>{});
         closeExtensionWindows(); toast('插件配置已更新，刷新页面可更新入口', 'ok');
       }
     };
@@ -909,6 +924,10 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   let knownIssues = Array.isArray(initialIssues) ? initialIssues : [];
 
   function renderLog(res) {
+    const serverButton = root.querySelector('#btn-wasm-server');
+    const fallback = engines.find((e) => e.id === 'xelatex') || engines.find((e) => e.kind !== 'browser' && e.id !== 'wasm-pdftex' && e.id !== 'auto');
+    serverButton.style.display = canEdit && !res.ok && res.engine === 'wasm-pdftex' && fallback ? '' : 'none';
+    serverButton.onclick = () => setEngine(fallback.id);
     const problems = [
       ...(res.errors || []).map((e) => ({ ...e, level: 'err' })),
       ...(res.warnings || []).map((w) => ({ ...w, level: 'warn' })),
@@ -1366,7 +1385,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   onDocChange = (update) => {
     if (update.transactions.some((tr) => tr.annotation(ySyncAnnotation))) return;
     scheduleCompile();
-    research?.scheduleReview();
+    research?.scheduleReview(update);
   };
 
   const keyHandler = (e) => {
@@ -1413,6 +1432,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }, 300);
 
   return () => {
+    vimModule?.releaseVim(view);
     browserTeX.destroy(); if (browserPdf) URL.revokeObjectURL(browserPdf);
     window.removeEventListener('keydown', keyHandler);
     eventClosed = true;

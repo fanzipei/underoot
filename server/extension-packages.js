@@ -14,6 +14,9 @@ export const EXTENSION_PERMISSIONS = {
   'documents.read': '读取当前项目的 Markdown / TeX 文档',
   'documents.write': '经作者逐次确认后保存文档（版本冲突保护）',
   'documents.convert': '使用本地 Pandoc 转换 Markdown / TeX，不调用模型',
+  'publishing.templates.read':'读取当前用户的个人 Slides / Poster 模板',
+  'publishing.templates.write':'经用户确认后注册个人视觉模板，不执行任意 LaTeX',
+  'publishing.templates.extract':'请求宿主打开 PDF 模板提取界面，文件由用户选择',
 };
 const bad = (message) => Object.assign(new Error(message), { status: 400 });
 export const packageDigest = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');

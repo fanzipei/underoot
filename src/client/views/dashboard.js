@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import {openTemplateLibrary}from'../template-library.js';
 import { openWorkspaceSearch, openNotifications, openAiSettings } from './research-tools.js';
 import { loadExtensions, enabledExtension, extensionCommands, openExtensionsManager, closeExtensionWindows } from '../extensions.js';
 import {
@@ -472,7 +473,7 @@ export function renderDashboard(root, { user, onLogout, onOpenProject, onOpenAdm
   root.querySelector('#btn-extension-tools').onclick = async (event) => {
     const anchor = event.currentTarget;
     extensionList = await loadExtensions();
-    const items = extensionCommands(extensionList, { 'discovery.search': openWorkspaceSearch });
+    const items = extensionCommands(extensionList, { 'discovery.search': openWorkspaceSearch,'publishing.templates':()=>openTemplateLibrary() });
     dropdown(anchor, items.length ? items : [{ key: 'manage', label: '安装或启用插件', onClick: () => openExtensionsManager(user) }]);
   };
   root.querySelector('#search').addEventListener('input', (e) => { query = e.target.value.trim(); render(); });

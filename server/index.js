@@ -21,6 +21,7 @@ import { attachCollab, flushAll } from './collab.js';
 import { workspaceRouter } from './workspace.js';
 import { extensionsRouter, extensionAssets } from './extensions.js';
 import { wasmRouter } from './wasm.js';
+import { publishingTemplatesRouter } from './publishing-templates.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -40,6 +41,7 @@ app.use('/api/workspace', workspaceRouter);
 app.use('/api/extensions', extensionsRouter);
 app.use('/extensions', extensionAssets);
 app.use('/api/wasm', wasmRouter);
+app.use('/api/workspace/publishing-templates',publishingTemplatesRouter);
 app.get('/api/templates', (req, res) => res.json({ templates: listTemplates() }));
 app.get('/favicon.ico', (req, res) => res.type('image/svg+xml').sendFile(path.join(PUBLIC_DIR, 'favicon.svg')));
 

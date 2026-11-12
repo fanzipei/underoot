@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import {reviewContext,ReviewBudget,REVIEW_POLICY}from'../extensions/builtin/underoot.assistant/context.mjs';
+let count=0;const check=(name,value)=>{assert.ok(value,name);console.log('✓',name);count++;};
+const source='FIRST_SECRET '.repeat(10000)+'\n\nChanged paragraph with exact evidence.\n\n'+'LAST_SECRET '.repeat(10000);
+const from=source.indexOf('Changed paragraph');
+const plan=reviewContext(source,{from,to:from+20});
+check('只获取修改段落而非稿件开头',plan.content.includes('Changed paragraph')&&!plan.content.includes('FIRST_SECRET')&&!plan.content.includes('LAST_SECRET'));
+check('范围对应原文精确位置',source.slice(plan.from,plan.to)===plan.content);
+const long='Very long sentence. '.repeat(20000);
+check('手动段落输入不超过 6000 字符',reviewContext(long,{from:100000}).chars<=6000);
+check('自动段落输入不超过 2200 字符',reviewContext(long,{from:100000,automatic:true}).chars<=2200);
+check('过大选区被明确标注',reviewContext(long,{from:0,to:20000}).truncatedSelection);
+const unicode=reviewContext('😀'.repeat(10000),{from:1001,automatic:true});check('片段不会切断 Unicode',!/[\uD800-\uDBFF]$/.test(unicode.content)&&!/^[\uDC00-\uDFFF]/.test(unicode.content));
+let now=1000000;const budget=new ReviewBudget(()=>now);
+check('自动首次可调用',budget.reserve('u',true,2200).allowed);
+check('自动冷却期不调用模型',!budget.reserve('u',true,2200).allowed);now+=90000;
+check('90 秒后可再次自动调用',budget.reserve('u',true,2200).allowed);now+=90000;
+check('自动第三次可调用',budget.reserve('u',true,2200).allowed);now+=90000;
+check('10 分钟内自动最多三次',!budget.reserve('u',true,2200).allowed);
+for(let i=0;i<3;i++){now+=15000;assert.ok(budget.reserve('u',false,6000).allowed);}
+now+=15000;check('所有审阅合计最多六次',!budget.reserve('u',false,6000).allowed);
+check('不同用户预算隔离',budget.reserve('other',false,6000).allowed);
+now+=REVIEW_POLICY.windowMs;check('窗口过后预算释放',budget.reserve('u',true,2200).allowed);
+console.log(`Assistant economy unit: ${count}/${count} passed`);

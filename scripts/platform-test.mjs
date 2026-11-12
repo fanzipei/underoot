@@ -50,6 +50,9 @@ check('编译中间产物不会发送到浏览器', files.every((f) => !/\.(aux|
 check('未登录不能读取编译源码', (await req(base + '/browser-files')).status === 401);
 check('WASM 格式文件由本地服务提供', (await fetch(BASE + '/api/wasm/texlive/pdftex/10/swiftlatexpdftex.fmt', { headers: { cookie: owner } })).status === 200);
 check('WASM 无后缀字体查找正常', (await fetch(BASE + '/api/wasm/texlive/pdftex/3/cmex7', { headers: { cookie: owner } })).status === 200);
+for (const name of ['geometry.sty', 'graphics.cfg', 'amsthm.sty']) {
+ check(`WASM v2 常用资源可通过认证获取：${name}`, (await fetch(BASE + '/api/wasm/texlive/v2/pdftex/26/' + name, { headers: { cookie: owner } })).status === 200);
+}
 check('WASM 资源接口拒绝未知文件', (await fetch(BASE + '/api/wasm/texlive/pdftex/26/underoot-secret.key', { headers: { cookie: owner } })).status === 404);
 const zipResponse = await fetch(BASE + '/api/extensions/examples/markdown/download', { headers: { cookie: owner } });
 const zip = new AdmZip(Buffer.from(await zipResponse.arrayBuffer()));

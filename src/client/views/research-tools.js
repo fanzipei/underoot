@@ -1,6 +1,7 @@
 import { EditorView } from '@codemirror/view';
 import { api } from '../api.js';
 import { openPublishing } from '../publishing.js';
+import { createInlineReview } from '../inline-review.js';
 import { modal, toast, escapeHtml as e, confirmDialog, promptDialog, timeAgo } from '../ui.js';
 
 export function navigateProject(id, options = {}) {
@@ -19,6 +20,7 @@ export async function openAiSettings(user) {
     const { root: m, close } = modal({ title: 'AI API 配置', subtitle: 'OpenAI 兼容接口 · 仅管理员可修改',
       bodyHtml: `<div class="field"><label for="ai-url">API Base URL</label><input class="input" id="ai-url" placeholder="https://api.example.com/v1" value="${e(config.baseUrl)}" /></div>
         <div class="field"><label for="ai-model">模型名称</label><input class="input" id="ai-model" placeholder="填写服务商提供的精确模型名称" value="${e(config.model)}" /></div>
+        <div class="field"><label for="ai-token-field">输出 Token 上限参数</label><select class="input" id="ai-token-field"><option value="max_completion_tokens">max_completion_tokens（标准）</option><option value="max_tokens">max_tokens（兼容旧服务）</option></select></div>
         <div class="field"><label for="ai-key">API Key ${config.hasKey ? '（已配置；留空保留）' : ''}</label><input class="input" type="password" id="ai-key" autocomplete="off" placeholder="密钥仅加密保存在服务器，保存后不回显" /></div>
         <label class="research-check"><input type="checkbox" id="ai-vision" ${config.vision ? 'checked' : ''} />该模型支持图片输入</label>
         <label class="research-check"><input type="checkbox" id="ai-clear-key" />清除已保存密钥</label>
@@ -26,12 +28,13 @@ export async function openAiSettings(user) {
       footerHtml: '<button class="btn" id="ai-test">测试连接</button><button class="btn" id="ai-close">关闭</button><button class="btn btn-primary" id="ai-save">保存配置</button>',
     });
     m.querySelector('#ai-close').onclick = close;
+    m.querySelector('#ai-token-field').value=config.tokenLimitField||'max_completion_tokens';
     m.querySelector('#ai-save').onclick = async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
       try {
         await api.put('/api/workspace/ai/config', { baseUrl: m.querySelector('#ai-url').value.trim(), model: m.querySelector('#ai-model').value.trim(),
-          apiKey: m.querySelector('#ai-clear-key').checked ? null : m.querySelector('#ai-key').value, vision: m.querySelector('#ai-vision').checked });
+          apiKey: m.querySelector('#ai-clear-key').checked ? null : m.querySelector('#ai-key').value, vision: m.querySelector('#ai-vision').checked, tokenLimitField:m.querySelector('#ai-token-field').value });
         m.querySelector('#ai-key').value = '';
         m.querySelector('#ai-test-result').textContent = '配置已保存，密钥不会回显。';
         toast('AI 配置已保存', 'ok');
@@ -109,19 +112,22 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
   const panel = root.querySelector('#assistant-panel');
   const editable = ['owner', 'editor'].includes(project.role);
   const canReview = project.role !== 'viewer';
-  let items = []; let opened = false; let destroyed = false; let busy = false; let timer;
+  let items = []; let opened = false; let destroyed = false; let busy = false; let timer;let autoTimer;let changedChars=0;let changedRange=null;let draft=null;let economyText='本地检查不使用 Token；AI 按段落发送。';let sendImagesOpt=false;
   let filter = 'pending'; let category = 'all'; let aiStatus = { configured: false };
   let focus = ''; let selectedRegion = null; let automaticModel = false;
   const localAutoKey = `ls.assistant.auto.${user.id}.${project.id}`;
   let automaticLocal = localStorage.getItem(localAutoKey) !== '0';
   const roleLabel = { owner: '所有者', editor: '编辑者', reviewer: '审阅者', viewer: '只读成员' };
+  const inline=assistantEnabled&&canReview?createInlineReview({view,getPath:getActivePath,editable,onAccept:(id)=>decide(id,'accepted'),onReject:(id)=>decide(id,'rejected'),onRequest:({focus:question,range})=>{focus=question;open();run(true,false,false,range);}}):null;
 
   async function refresh() {
     if (destroyed) return;
     const [data, status] = await Promise.all([api.get(`${base}/suggestions`), api.get('/api/workspace/ai/status')]);
     if (destroyed) return;
+    const changed=JSON.stringify(items)!==JSON.stringify(data.suggestions)||JSON.stringify(aiStatus)!==JSON.stringify(status);
     items = data.suggestions; aiStatus = status;
-    if (opened) paint();
+    inline?.setItems(items);
+    if (opened&&changed&&!panel.contains(document.activeElement)) paint();
     const count = items.filter((item) => item.status === 'pending' && !item.stale).length;
     root.querySelector('#btn-assistant')?.setAttribute('title', `论文助手 · ${count} 条待处理建议`);
   }
@@ -132,10 +138,11 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
     panel.innerHTML = `<div class="comments-head"><b>${assistantEnabled ? '论文助手' : '修改建议中心'}</b><div class="spacer"></div><button class="btn btn-sm" id="assistant-config">API 配置</button><button class="btn btn-ghost btn-sm" id="assistant-close">×</button></div>
       <div class="assistant-controls" ${assistantEnabled ? '' : 'hidden'}><div class="src-note">${aiStatus.configured ? `模型：${e(aiStatus.model)}` : '尚未配置 API；本地检查可直接使用'} · ${roleLabel[project.role] || ''}</div>
       <textarea class="input" id="assistant-focus" rows="2" placeholder="例如：检查结论是否过度推断；图 2 与正文的说法是否一致…">${e(focus)}</textarea>
-      <div class="assistant-buttons"><button class="btn btn-sm" id="assistant-local" ${!canReview || busy ? 'disabled' : ''}>本地检查</button><button class="btn btn-primary btn-sm" id="assistant-ai" ${!canReview || busy || !aiStatus.configured ? 'disabled' : ''}>${busy ? '检查中…' : 'AI 检查'}</button><button class="btn btn-sm" id="assistant-selection" ${!canReview || busy ? 'disabled' : ''}>选区建议</button><button class="btn btn-sm" id="assistant-literature" ${!canReview || busy ? 'disabled' : ''}>查找文献</button></div>
+      <div class="assistant-buttons"><button class="btn btn-sm" id="assistant-local" ${!canReview || busy ? 'disabled' : ''}>本地全文检查</button><button class="btn btn-primary btn-sm" id="assistant-ai" ${!canReview || busy || !aiStatus.configured ? 'disabled' : ''}>${busy ? '检查中…' : '预览 AI 段落检查'}</button><button class="btn btn-sm" id="assistant-selection" ${!canReview || busy ? 'disabled' : ''}>选区建议</button><button class="btn btn-sm" id="assistant-literature" ${!canReview || busy ? 'disabled' : ''}>查找文献</button></div><p class="assistant-economy" role="status">${e(economyText)}</p>
+      ${draft?`<div class="assistant-request"><b>将发送 ${e(draft.plan.path)} 的 ${draft.plan.chars} 字符${draft.plan.cacheHit?' · 可复用缓存':''}</b><p class="src-note">范围 ${draft.plan.from}–${draft.plan.to}，输出上限 ${draft.plan.maxOutputTokens} token。${draft.body.sendImages?'本次包含明确选择的图片。':'仅发送下方片段，不附加其他文件或图片。'}${draft.plan.truncatedSelection?' 选区过长，仅检查下方显示片段；未显示部分不会发送。':''}</p><pre>${e(draft.plan.content)}</pre><div class="assistant-buttons"><button class="btn btn-primary btn-sm" id="assistant-send">${draft.plan.cacheHit?'复用已有检查':'发送本段并检查'}</button><button class="btn btn-sm" id="assistant-discard">取消</button></div></div>`:''}
       <label class="research-check"><input type="checkbox" id="assistant-auto" ${automaticLocal ? 'checked' : ''} ${!canReview ? 'disabled' : ''} />编辑后自动本地检查</label>
-      <label class="research-check"><input type="checkbox" id="assistant-auto-ai" ${automaticModel ? 'checked' : ''} ${!canReview || !aiStatus.configured ? 'disabled' : ''} />自动 AI 建议（会发送稿件）</label>
-      <label class="research-check"><input type="checkbox" id="assistant-images" ${aiStatus.vision ? '' : 'disabled'} />向视觉模型发送圈选截图及项目插图</label>
+      <label class="research-check"><input type="checkbox" id="assistant-auto-ai" ${automaticModel ? 'checked' : ''} ${!canReview || !aiStatus.configured ? 'disabled' : ''} />轻量自动 AI（仅修改段落，默认关闭）</label>
+      <label class="research-check"><input type="checkbox" id="assistant-images" ${sendImagesOpt?'checked':''} ${aiStatus.vision ? '' : 'disabled'} />本次手动检查发送圈选截图或最多 2 张项目插图</label><p class="src-note">Alt+K 就地提问 · Alt+Enter 接受预览 · Esc 关闭。自动模式停笔 45 秒、累计修改 ≥40 字符才触发；每次 ≤2200 字符，最多每 90 秒一次、每 10 分钟三次，不发送图片。</p>
       ${selectedRegion ? `<p class="assistant-region">已圈选 PDF 第 ${selectedRegion.page} 页 <button class="btn btn-ghost btn-sm" id="assistant-clear-region">清除</button></p>` : ''}
       <div class="research-search"><select class="input" id="assistant-filter"><option value="pending">当前待处理</option><option value="all">全部建议</option><option value="accepted">已接受</option><option value="rejected">已拒绝</option><option value="stale">原文已变化</option></select><select class="input" id="assistant-category"><option value="all">所有类型</option><option value="language">语言</option><option value="writing">论述</option><option value="citation">引用</option><option value="figure">插图</option><option value="consistency">一致性</option></select></div></div>
       <div class="assistant-list">${shown.length ? shown.map((s) => `<article class="assistant-card" data-suggestion="${s.id}"><button class="assistant-location" data-locate="${s.id}"><b>${e(s.title)}</b><span>${e(s.path)}${s.pdf ? ` · PDF 第 ${s.pdf.page} 页` : ''} · ${s.source === 'model' ? 'AI' : s.source === 'crossref' ? 'Crossref' : s.source === 'plugin' ? '插件：' + e(s.pluginName || s.pluginId) : '本地规则'}</span></button><p>${e(s.detail)}</p>
@@ -145,17 +152,21 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
         ${s.status === 'pending' && editable ? `<div class="assistant-buttons"><button class="btn btn-primary btn-sm" data-accept="${s.id}" ${s.stale && s.canApply ? 'disabled' : ''}>${s.canApply ? '接受并应用' : '接受（手动落实）'}</button><button class="btn btn-sm" data-reject="${s.id}">不接受</button></div>` : `<span class="badge">${s.status === 'accepted' ? (s.canApply ? '已接受' : '已接受 · 待手动落实') : s.status === 'rejected' ? '未接受' : '待作者处理'}</span>`}</article>`).join('') : '<div class="comments-empty">没有待显示的建议。可检查全文、选中源码，或在 PDF 上圈选区域后提问。</div>'}</div>`;
     panel.querySelector('#assistant-close').onclick = close;
     panel.querySelector('#assistant-config').onclick = () => openAiSettings(user);
-    panel.querySelector('#assistant-focus').oninput = (event) => { focus = event.target.value; };
+    panel.querySelector('#assistant-focus').oninput = (event) => { focus = event.target.value;if(draft){draft=null;panel.querySelector('.assistant-request')?.remove();} };
     panel.querySelector('#assistant-filter').value = filter;
     panel.querySelector('#assistant-filter').onchange = (event) => { filter = event.target.value; paint(); };
     panel.querySelector('#assistant-category').value = category;
     panel.querySelector('#assistant-category').onchange = (event) => { category = event.target.value; paint(); };
     panel.querySelector('#assistant-auto').onchange = (event) => { automaticLocal = event.target.checked; localStorage.setItem(localAutoKey, automaticLocal ? '1' : '0'); };
     panel.querySelector('#assistant-auto-ai').onchange = async (event) => {
-      automaticModel = event.target.checked && await confirmDialog({ title: '开启自动 AI 建议', message: '停止编辑后会定期将论文源码发送到管理员配置的模型服务，可能产生费用。自动建议不会自动修改正文。', confirmText: '开启' });
+      automaticModel = event.target.checked && await confirmDialog({ title: '开启本会话的轻量自动建议', message: '仅在本地修改至少 40 字符并停笔 45 秒后，发送修改附近最多 2200 字符；不发送全文、PDF 或图片。最多每 90 秒一次、每 10 分钟三次；相同片段复用缓存。可能产生费用，不会自动改稿。关闭或刷新页面后恢复默认关闭。', confirmText: '开启本会话' });
+      if(!automaticModel)clearTimeout(autoTimer);
       paint();
     };
     panel.querySelector('#assistant-local').onclick = () => run(false);
+    panel.querySelector('#assistant-images').onchange=(event)=>{sendImagesOpt=event.target.checked;if(draft){draft=null;paint();}};
+    panel.querySelector('#assistant-send')?.addEventListener('click',()=>{const value=draft;draft=null;executeReview(value.body,false);});
+    panel.querySelector('#assistant-discard')?.addEventListener('click',()=>{draft=null;paint();});
     panel.querySelector('#assistant-ai').onclick = () => run(true);
     panel.querySelector('#assistant-selection').onclick = () => {
       const sel = view.state.selection.main;
@@ -163,30 +174,44 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
       run(aiStatus.configured, true);
     };
     panel.querySelector('#assistant-literature').onclick = findLiterature;
-    panel.querySelector('#assistant-clear-region')?.addEventListener('click', () => { selectedRegion = null; paint(); });
+    panel.querySelector('#assistant-clear-region')?.addEventListener('click', () => { selectedRegion = null;draft=null; paint(); });
     panel.querySelectorAll('[data-locate]').forEach((button) => { button.onclick = () => locate(items.find((s) => s.id === button.dataset.locate)); });
     panel.querySelectorAll('[data-accept],[data-reject]').forEach((button) => { button.onclick = () => decide(button.dataset.accept || button.dataset.reject, button.hasAttribute('data-accept') ? 'accepted' : 'rejected'); });
   }
-  async function run(useAI, selectionOnly = false, automatic = false) {
+  async function run(useAI, selectionOnly = false, automatic = false, requestedRange = null) {
     if (busy || destroyed || !canReview) return;
-    const sendImages = panel.querySelector('#assistant-images')?.checked === true;
-    if (useAI && !automatic && !await confirmDialog({ title: '向模型发送稿件进行审阅', message: `将发送当前项目中最多约 10 万字符的 LaTeX/BibTeX 源码${sendImages ? '、所选 PDF 截图及最多 4 张插图' : ''}。建议仅供参考，接受前可查看差异；事实和文献由作者核实。`, confirmText: '发送并审阅' })) return;
-    const sel = view.state.selection.main;
-    let selection = selectionOnly && !sel.empty ? view.state.doc.sliceString(sel.from, sel.to) : '';
-    let region;
-    if (selectedRegion) {
-      try { region = await pdfViewer.getRegionContext(selectedRegion.page, selectedRegion.rect); selection = region.text; }
-      catch (error) { toast(error.message, 'err'); return; }
+    if(!useAI)return executeReview({useAI:false},automatic);
+    const path=getActivePath();
+    if(!/\.(tex|bib)$/i.test(path||'')){if(!automatic)toast('请先打开 TeX / BibTeX 源码','err');return;}
+    const sel=view.state.selection.main;
+    const range=requestedRange||{from:sel.from,to:sel.to};
+    const body={useAI:true,consent:true,path,range,focus,automatic,sendImages:!automatic&&sendImagesOpt};
+    if(!automatic&&selectedRegion){
+      try{const region=await pdfViewer.getRegionContext(selectedRegion.page,selectedRegion.rect);body.pdf=selectedRegion;body.selection=region.text;body.image=sendImagesOpt?region.image:undefined;}
+      catch(err){toast(err.message,'err');return;}
     }
-    if (useAI && selectedRegion && !selection.trim() && !sendImages) { toast('圈选区域未提取到文字，请勾选发送截图（需要视觉模型），或在问题中补充原文', 'err'); return; }
-    busy = true; if (opened) paint();
-    try {
-      const result = await api.post(`${base}/review`, { useAI, consent: useAI, sendImages, focus, selection,
-        path: /\.(tex|bib)$/i.test(getActivePath() || '') ? getActivePath() : project.mainFile, ...(selectedRegion ? { pdf: selectedRegion } : {}), ...(sendImages && region ? { image: region.image } : {}) });
-      items = result.suggestions;
-      if (!automatic) toast(useAI ? `审阅完成，收到 ${result.modelCount} 条模型意见` : `本地检查完成，发现 ${result.localCount} 条线索`, 'ok');
-    } catch (error) { if (!automatic || useAI) toast(error.message, 'err'); }
-    finally { busy = false; if (opened) paint(); }
+    if(automatic)return executeReview(body,true);
+    if(!aiStatus.configured){try{aiStatus=await api.get('/api/workspace/ai/status');}catch(err){toast(err.message,'err');return;}}
+    if(!aiStatus.configured){toast('请先配置模型 API，或使用本地检查','err');return;}
+    try{
+      const plan=await api.post(`${base}/review/plan`,body);body.planKey=plan.key;
+      draft={body,plan};if(!opened)open();paint();
+    }catch(err){toast(err.message,'err');}
+  }
+  async function executeReview(body, automatic=false){
+    if(busy||destroyed)return;busy=true;if(opened&&!automatic)paint();
+    try{
+      const result=await api.post(`${base}/review`,body);items=result.suggestions;inline?.setItems(items);
+      if(result.economy){const value=result.economy;const usage=value.usage;
+       economyText=result.skipped|| (value.cacheHit?'复用相同片段结果，本次未调用模型。':`本次正文片段 ${value.inputChars} 字符${value.imageCount?`，另含 ${value.imageCount} 张图片`:""}；${usage&&Number.isFinite(usage.inputTokens)?`服务报告输入 ${usage.inputTokens} / 输出 ${usage.outputTokens??'未知'} token。`:'服务未返回实际 token 用量。'}`);
+       economyText+=` 本轮 ${value.budget.calls}/6 次调用，自动 ${value.budget.automaticCalls}/3。`;
+      }else economyText=`本地检查完成，${result.localCount} 条线索；不消耗模型 Token。`;
+      inline?.status(economyText);
+      if(!automatic){toast(body.useAI?result.skipped||`收到 ${result.modelCount} 条意见`:`本地检查：${result.localCount} 条线索`,'ok');
+       const first=body.useAI&&items.find((s)=>s.source==='model'&&s.status==='pending'&&!s.stale&&s.path===getActivePath());if(first)await locate(first);
+      }
+    }catch(err){economyText=err.message;if(automatic){automaticModel=false;economyText+=' 自动 AI 已暂停，本会话不会自动重试。';}else toast(err.message,'err');inline?.status(economyText);}
+    finally{busy=false;if(opened&&(!automatic||!panel.contains(document.activeElement)))paint();}
   }
   async function findLiterature() {
     const query = await promptDialog({ title: '检索真实候选文献', label: '发送到 Crossref 的关键词（不要包含未公开敏感内容）', value: focus || project.name, confirmText: '检索' });
@@ -218,10 +243,11 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
       if (from < 0) { toast('原文已变化，请重新审阅以定位', 'err'); return; }
       from = Math.min(from, text.length);
       view.dispatch({ selection: { anchor: from, head: Math.min(text.length, from + suggestion.before.length) }, effects: EditorView.scrollIntoView(from, { y: 'center' }) });
-      view.focus();
+      view.focus();inline?.show(suggestion);
     } catch (error) { toast(error.message, 'err'); }
   }
   async function decide(id, status) {
+    inline?.close();
     try {
       const result = await api.patch(`${base}/suggestions/${id}`, { status });
         if (result.applied && assistantEnabled) await api.post(`${base}/review`, {}).catch(() => {});
@@ -343,12 +369,24 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
     open, close, openHistory, openDerive, openTemplate,
     onPdfRegion(region) { selectedRegion = region.source ? null : { page: region.page, rect: region.rect }; focus = region.question || '请检查选中区域的论述、引用与插图一致性'; open(); },
     async getPdfSelection() { if (!selectedRegion) throw new Error('请先在 PDF 中圈选区域并交给助手'); return pdfViewer.getRegionContext(selectedRegion.page, selectedRegion.rect); },
-    scheduleReview() {
-      if (!assistantEnabled || (!automaticLocal && !automaticModel) || !canReview || destroyed) return;
-      clearTimeout(timer);
-      timer = setTimeout(() => run(automaticModel, false, true), automaticModel ? 60000 : 12000);
+    scheduleReview(update) {
+      if(!assistantEnabled||!canReview||destroyed)return;
+      const userEdit=update?.transactions.some((t)=>['input','delete','undo','redo'].some((event)=>t.isUserEvent(event)));
+      if(!userEdit)return;
+      inline?.close();
+      if(draft){draft=null;economyText='正文已更新，请重新预览发送范围。';if(opened)paint();}
+      if(automaticLocal){clearTimeout(timer);timer=setTimeout(()=>run(false,false,true),12000);}
+      if(!automaticModel)return;
+      let from=view.state.doc.length,to=0;
+      update.changes.iterChanges((_a,_b,c,d,inserted)=>{from=Math.min(from,c);to=Math.max(to,d);changedChars+=inserted.length+(_b-_a);});
+      changedRange={path:getActivePath(),from,to};clearTimeout(autoTimer);
+      autoTimer=setTimeout(()=>{
+       if(!automaticModel||destroyed||busy||document.hidden||changedChars<40||changedRange?.path!==getActivePath())return;
+       const range={from:Math.min(changedRange.from,view.state.doc.length),to:Math.min(changedRange.to,view.state.doc.length)};
+       changedChars=0;run(true,false,true,range);
+      },45000);
     },
     handleEvent(message) { if (message.type === 'assistant:changed') refresh().catch(() => {}); },
-    destroy() { destroyed = true; clearTimeout(timer); panel.classList.remove('open'); },
+    destroy() { destroyed = true; clearTimeout(timer);clearTimeout(autoTimer);inline?.destroy(); panel.classList.remove('open'); },
   };
 }

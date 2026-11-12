@@ -89,6 +89,7 @@ export async function remoteJSON(rawUrl, { body, key, timeout = 90000, method, a
 export function aiConfig(includeEndpoint = false) {
   const config = JSON.parse(getSetting(CONFIG)?.value || '{}');
   return { configured: !!(config.baseUrl && config.model && config.key), model: config.model || '', vision: !!config.vision,
+    tokenLimitField: config.tokenLimitField || 'max_completion_tokens',
     ...(includeEndpoint ? { baseUrl: config.baseUrl || '', hasKey: !!config.key } : {}) };
 }
 export async function saveAiConfig(body, userId) {
@@ -104,7 +105,9 @@ export async function saveAiConfig(body, userId) {
     if (body.apiKey.length > 4096) throw failure(400, 'API Key 过长');
     key = seal(body.apiKey.trim());
   }
-  setSetting(CONFIG, JSON.stringify({ baseUrl, model, key, vision: body.vision === true }), userId);
+  const tokenLimitField=body.tokenLimitField||previous.tokenLimitField||'max_completion_tokens';
+  if(!['max_completion_tokens','max_tokens'].includes(tokenLimitField))throw failure(400,'输出 token 参数无效');
+  setSetting(CONFIG, JSON.stringify({ baseUrl, model, key, vision: body.vision === true, tokenLimitField }), userId);
   return aiConfig(true);
 }
 export async function callModel(instruction, input, images = [], options = {}) {
@@ -115,10 +118,12 @@ export async function callModel(instruction, input, images = [], options = {}) {
   if (config.vision) for (const image of images.slice(0, 4)) content.push({ type: 'image_url', image_url: { url: image, detail: 'auto' } });
   const response = await remoteJSON(endpoint, { key: unseal(config.key), timeout:options.timeout || 90000, signal:options.signal, body: {
     model: config.model,
+    ...(options.maxOutputTokens?{[config.tokenLimitField||'max_completion_tokens']:options.maxOutputTokens}:{}),
     messages: [{ role: 'system', content: instruction }, { role: 'user', content: content.length === 1 ? content[0].text : content }],
     stream: false,
   } });
   const text = response.choices?.[0]?.message?.content;
+  options.onUsage?.(response.usage||null);
   if (typeof text !== 'string' || text.length > 150000) throw failure(502, '模型没有返回可用文本');
   return text;
 }

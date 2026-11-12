@@ -1,0 +1,51 @@
+import assert from'node:assert/strict';import http from'node:http';import{once}from'node:events';
+const BASE=process.env.BASE_URL;let calls=0;let captured;let mode='normal';let hold=false;let release;let count=0;
+const check=(name,value)=>{assert.ok(value,name);console.log('✓',name);count++;};
+async function req(url,cookie='',method='GET',body){const r=await fetch(BASE+url,{method,headers:{cookie,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:r.status,data:await r.json().catch(()=>({})),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
+const mock=http.createServer(async(r,res)=>{let text='';for await(const b of r)text+=b;captured=JSON.parse(text);calls++;if(hold){hold=false;await new Promise((r)=>{release=r;});}
+const content=mode==='malformed'?'not JSON':JSON.stringify({suggestions:[{title:'谨慎表达',detail:'保持结果范围。',path:'main.tex',before:'teh bounded finding',after:'the bounded finding',category:'language'},{title:'弱化结论',detail:'按范围陈述。',path:'main.tex',before:'We report',after:'We cautiously report',category:'consistency'},{title:'非上下文文件',path:'other.tex',before:'other',after:'invented'}]});
+res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{message:{content}}],usage:{prompt_tokens:123,completion_tokens:45,total_tokens:168}}));});
+mock.listen(0,'127.0.0.1');await once(mock,'listening');
+try{
+ const owner=(await req('/api/auth/login','','POST',{email:'demo@latex.studio',password:'demo1234'})).cookie;
+ const admin=(await req('/api/auth/login','','POST',{email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_PASSWORD})).cookie;
+ await req('/api/workspace/ai/config',admin,'PUT',{baseUrl:`http://127.0.0.1:${mock.address().port}/v1`,model:'fixture-fast-model',apiKey:'fixture-only',vision:true});
+ const project=(await req('/api/projects',owner,'POST',{name:'Economy assistant fixture',template:'blank'})).data.project;const pid=project.id;const base=`/api/workspace/projects/${pid}`;
+ let source='\\documentclass{article}\n\\begin{document}\n\nUnrelated phrase: teh bounded finding. '+('DO_NOT_SEND_UNRELATED_CONTENT '.repeat(6000))+'\n\nWe report teh bounded finding from cohort.\n\n\\end{document}';
+ const write=async(content)=>req(`/api/projects/${pid}/file?path=main.tex`,owner,'PUT',{content});await write(source);await req(`/api/projects/${pid}/file`,owner,'POST',{path:'other.tex',content:'other private file DO_NOT_SEND_OTHER_FILE'});
+ const body=()=>({useAI:true,consent:true,path:'main.tex',range:{from:source.indexOf('We report'),to:source.indexOf('We report')+10},focus:'Check this paragraph'});
+ const preview=await req(base+'/review/plan',owner,'POST',body());
+ check('预览不调用模型',preview.status===200&&calls===0);
+ check('预览仅包含当前段落',preview.data.chars<=6000&&!preview.data.content.includes('DO_NOT_SEND'));
+ const result=await req(base+'/review',owner,'POST',{...body(),planKey:preview.data.key});
+ check('首次手动检查只调用一次',result.status===200&&calls===1);
+ check('请求不含全文或其他文件',!JSON.stringify(captured).includes('DO_NOT_SEND'));
+ check('模型输出有硬 token 上限',captured.max_completion_tokens===1200);
+ check('未显式选择时不发送图片',typeof captured.messages[1].content==='string');
+ check('返回服务实际报告的用量',result.data.economy.usage.totalTokens===168);
+ check('模型不可定位至未发送文件',!result.data.suggestions.some((s)=>s.title==='非上下文文件'));
+ const suggestion=result.data.suggestions.find((s)=>s.title==='谨慎表达');const ignored=result.data.suggestions.find((s)=>s.title==='弱化结论');
+ await req(base+'/suggestions/'+ignored.id,owner,'PATCH',{status:'rejected'});
+ const again=await req(base+'/review',owner,'POST',body());check('相同段落命中缓存且零新增调用',again.data.economy.cacheHit&&calls===1);
+ check('复用不会复活已忽略意见',again.data.suggestions.find((s)=>s.id===ignored.id).status==='rejected');
+ source='Unrelated added paragraph.\n\n'+source;await write(source);
+ const shifted=await req(base+'/review',owner,'POST',body());check('其他段落修改后仍可复用同一片段',shifted.data.economy.cacheHit&&calls===1);
+ const rebased=shifted.data.suggestions.find((s)=>s.id===suggestion.id);check('缓存建议重新定位到当前源码',rebased.canApply&&!rebased.stale&&source.slice(rebased.from,rebased.to)==='teh bounded finding');
+ const crossMode=await req(base+'/review',owner,'POST',{...body(),automatic:true});check('手动与自动复用相同的短片段',crossMode.data.economy.cacheHit&&calls===1);
+ const accepted=await req(base+'/suggestions/'+suggestion.id,owner,'PATCH',{status:'accepted'});check('缓存建议可安全应用并保留历史',accepted.data.applied===true);
+ source=(await req(`/api/projects/${pid}/file?path=main.tex`,owner)).data.content;
+ let automatic=await req(base+'/review',owner,'POST',{...body(),automatic:true});check('自动建议采用更小输出预算',automatic.status===200&&calls===2&&captured.max_completion_tokens===550);
+ check('自动正文上限 2200 字符',JSON.parse(captured.messages[1].content).sources[0].content.length<=2200);
+ const blocked=await req(base+'/review',owner,'POST',{...body(),automatic:true,focus:'Changed focus'});check('自动冷却不会再次付费调用',blocked.data.skipped&&calls===2);
+ const images=await req(base+'/review',owner,'POST',{...body(),automatic:true,sendImages:true});check('自动模式不会发送图片',images.data.skipped&&calls===2);
+ await req(`/api/projects/${pid}/members`,owner,'POST',{email:process.env.ADMIN_EMAIL,role:'editor'});
+ mode='malformed';const bad=await req(base+'/review',admin,'POST',{...body(),focus:'Malformed fixture',actorId:'spoofed-owner'});check('异常输出不自动重试',bad.status===502&&calls===3);mode='normal';
+ hold=true;release=null;const waiting=req(base+'/review',admin,'POST',{...body(),automatic:true,focus:'Delayed response'});
+ for(let i=0;i<100&&!release;i++)await new Promise((r)=>setTimeout(r,20));assert.ok(release);source=source.replace('We report the bounded finding','We report updated evidence');await write(source);release();const stale=await waiting;
+ check('等待期间目标段落变化会丢弃旧响应',!!stale.data.skipped&&stale.data.modelCount===0);
+ check('缺少发送同意不调用模型',(await req(base+'/review',owner,'POST',{...body(),consent:false})).status===400);
+ check('未登录不能查看发送范围',(await req(base+'/review/plan','','POST',body())).status===401);
+ await req('/api/workspace/ai/config',admin,'PUT',{baseUrl:`http://127.0.0.1:${mock.address().port}/v1`,model:'fixture-fast-model',tokenLimitField:'max_tokens'});
+ check('管理员可切换兼容输出参数',(await req('/api/workspace/ai/config',admin)).data.tokenLimitField==='max_tokens');
+ console.log(`Assistant economy integration: ${count}/${count} passed`);
+}finally{release?.();await new Promise((r)=>mock.close(r));}

@@ -15,8 +15,9 @@ For an installed skill, the command is relative to this skill's directory: `scri
 
 In underoot, prefer **更多 → 生成 LaTeX Slides / 生成学术 Poster**. The UI shows the split plan and asks the author to choose and confirm style, size/orientation, and density before starting. If operating outside that UI, present the same concrete choices and estimated model-call count before generation. A prior style choice remains valid unless the author changes it; do not repeatedly ask.
 
-- Slides: academic (Madrid), minimal, or contrast; 16:9 or 4:3; target content-frame count.
-- Poster: classic, modern, or compact; A0 portrait or landscape; two or three columns and target block count.
+- Slides: academic (Madrid), minimal, contrast, sidebar (Berkeley), conference (Copenhagen), clean (Boadilla), classic-talk (Warsaw), or large-title (Pittsburgh); 16:9 or 4:3; target content-frame count.
+- Poster: classic, modern, compact, bold, gallery, editorial, dark, or blueprint; A0 portrait or landscape; two or three columns and target block count.
+- Personal templates may be imported from a reference PDF in the host template library or registered by a plugin. PDF extraction is local Poppler analysis of at most the first three pages, not a model call or recovery of original LaTeX. Preview the approximate palette, typography and layout, then let the author confirm before saving. Never copy source logos/images automatically or execute macros from a template JSON.
 - Default to local extraction without sending source to a model. AI mode uses the configured host service only after explicit consent to the plan's maximum number of calls. Do not obtain or print keys.
 
 Process **every** chunk, including late sections and limitations. In AI mode, summarize each chunk to bounded, source-grounded JSON; recursively combine batches of at most eight summaries, then form the final narrative. Keep chunk IDs through each stage, and use the manifest to check coverage. Never pass only the beginning of a long paper, remove scientific sections to fit a context window, or invent figures, references, numerical results or conclusions. Local extraction is an editable excerpt, not a validated academic abstract.

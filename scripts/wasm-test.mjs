@@ -5,6 +5,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import './build-tex-runtime.mjs';
+import { wasmDiagnostics } from '../src/client/wasm-diagnostics.js';
 const root = fileURLToPath(new URL('../public/wasm/', import.meta.url));
 const index = JSON.parse(fs.readFileSync(path.join(root, 'texlive-index.json')));
 const pending = []; let ready;
@@ -44,4 +45,22 @@ try {
  send({ cmd: 'writefile', url: 'main.tex', src: '\\documentclass{article}\\begin{document}\\unknownunderootcommand\\end{document}' });
  result = await compile(); assert.notEqual(result.status, 0); assert.match(result.log, /Undefined control sequence/);
  console.log('✓ Invalid TeX returns a genuine compiler error');
+ const missing = wasmDiagnostics("! LaTeX Error: File `absent.sty' not found.\n! Emergency stop.\nl.4 \\usepackage{absent}");
+ assert.match(missing[0].message, /absent.sty/); assert.equal(missing[0].line, 4);
+ assert.equal(wasmDiagnostics('! Undefined control sequence.\nl.7 \\bad')[0].code, 'wasm-tex-error');
+ console.log('✓ Actionable diagnostics expose the missing file and original error line');
+ send({ cmd: 'writefile', url: 'main.tex', src: String.raw`\documentclass{article}
+\usepackage[a4paper,margin=2cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,booktabs,enumitem,float,fancyhdr,setspace,multirow}
+\usepackage{graphicx,xcolor,caption,natbib,url,hyperref}
+\newtheorem{theorem}{Theorem}
+\begin{document}
+\section{Paper package regression}
+\begin{theorem}A real theorem with mathematics $E=mc^2$.\end{theorem}
+\begin{itemize}[nosep]\item Compact list.\end{itemize}
+\begin{tabular}{ll}\toprule Method & Result\\\midrule Test & 42\\\bottomrule\end{tabular}
+\href{https://example.org}{Research link}
+\end{document}` });
+ result = await compile(); assert.equal(result.status, 0, result.log); assert.equal(Buffer.from(result.pdf).subarray(0,5).toString(), '%PDF-');
+ console.log('✓ geometry and common paper packages compile after an earlier failed run');
 } finally { clearTimeout(timer); }

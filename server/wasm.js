@@ -7,7 +7,7 @@ export const wasmRouter = express.Router();
 const runtime = path.join(ROOT, 'public/wasm');
 let index;
 wasmRouter.use(requireAuth);
-wasmRouter.get('/texlive/pdftex/:format/:name', (req, res) => {
+wasmRouter.get(['/texlive/pdftex/:format/:name', '/texlive/v2/pdftex/:format/:name'], (req, res) => {
  const name = req.params.name;
  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,140}$/.test(name) || !/^\d+$/.test(req.params.format)) return res.status(404).end();
  if (!index) index = JSON.parse(fs.readFileSync(path.join(runtime, 'texlive-index.json'), 'utf8'));

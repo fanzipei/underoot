@@ -16,7 +16,7 @@ await req(`/api/projects/${pid}/file?path=main.tex`,owner,'PUT',{content:main});
 await req(`/api/projects/${pid}/file`,owner,'POST',{path:'chapters/long.tex',content:chapter});
 let plan=(await req(base+'/plan',owner)).data;
 check('长稿超过 12 万字符仍可预览分块',plan.chars>120000&&plan.chunkCount>16);
-check('预览提供风格和调用预算',plan.styles.slides.length===3&&plan.styles.poster.length===3&&plan.modelCalls>plan.chunkCount);
+check('预览提供风格和调用预算',plan.styles.slides.length>=8&&plan.styles.poster.length>=8&&plan.modelCalls>plan.chunkCount);
 check('计划接口不返回全部稿件正文',plan.chunks.every((c)=>!Object.hasOwn(c,'text')));
 check('未确认风格不能创建任务',(await req(base+'/jobs',owner,'POST',{kind:'slides',planDigest:plan.digest})).status===400);
 check('未知风格被拒绝',(await req(base+'/jobs',owner,'POST',{kind:'slides',style:'wrong',confirmed:true,planDigest:plan.digest})).status===400);

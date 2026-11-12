@@ -18,7 +18,11 @@ license does not replace the engine and TeX component licenses.
   amsfonts, tools, graphics, graphics-def, xcolor, cm and bibtex, including
   package metadata and embedded notices, from the historic distribution:
   https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/2019/tlnet-final/archive/
-  plus l3backend's 2020 archive. `pdftex.map` combines the AMS font maps.
+  plus l3backend's 2020 archive. Additional frozen 2019 paper packages and
+  EC/CM-Super fonts are listed with archive SHA-256 hashes in
+  `additional-packages.json`; `scripts/extend-tex-runtime.py` reproduces this
+  extension. Their notices/metadata remain in the bundle. `pdftex.map` combines
+  the AMS and CM-Super T1/TS1 font maps.
   Matching `.source.tar.xz` archives at that location contain package sources.
   TeX Live license information: https://tug.org/texlive/copying.html
 
