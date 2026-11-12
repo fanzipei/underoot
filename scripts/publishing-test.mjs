@@ -34,8 +34,9 @@ for(const kind of ['slides','poster'])for(const style of plan.styles[kind]){
  sources.push({kind,style:style.id,result:job.result});
  const report=(await req(`/api/projects/${job.result.project.id}/file?path=${encodeURIComponent(job.result.reportPath)}`,owner)).data.content;
  const record=JSON.parse(report);check(`${kind} ${style.id} 保留末尾发现和分块追溯`,record.notes.length===plan.chunkCount&&record.notes.some((n)=>n.summary.includes('947')));
+ check(`${kind} ${style.id} 保存五步内容整理和实际检查状态`,record.editorial.rounds.length===5&&record.layout.status!=='needs-review');
  const tex=(await req(`/api/projects/${job.result.project.id}/file?path=${job.result.project.mainFile}`,owner)).data.content;
- check(`${kind} ${style.id} 按确认的版式生成`,kind==='slides'?tex.includes('aspectratio=43'):tex.includes('landscape')&&tex.includes('multicols}{2}'));
+ check(`${kind} ${style.id} 按确认的版式生成`,kind==='slides'?tex.includes('aspectratio=43'):tex.includes('landscape')&&tex.includes('postercolumns}{2}'));
 }
 check('生成没有修改原稿',(await req(`/api/projects/${pid}/file?path=main.tex`,owner)).data.content===main);
 const engines=(await req('/api/system/engines',owner)).data.engines;

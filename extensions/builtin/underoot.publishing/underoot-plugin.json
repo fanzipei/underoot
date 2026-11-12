@@ -1,7 +1,7 @@
 {
-  "id": "underoot.publishing", "name": "学术传播与投稿", "version": "0.5.0", "apiVersion": 1,
+  "id": "underoot.publishing", "name": "学术传播与投稿", "version": "0.7.0", "apiVersion": 1,
   "runtime": "builtin", "entry": "activate.mjs", "author": "underoot", "license": "MIT",
-  "description": "自动拆分长稿、分层汇总，确认风格后生成 Slides / Poster；保留全稿追溯与投稿模板分支。",
+  "description": "完整论文到研究叙事、图文关联与可读版面，五步预检、真实编译审计与来源笔记；保留原稿和投稿分支。",
   "permissions": ["project.read", "ai.invoke"],
   "contributes": { "commands": [
     { "id": "underoot.publishing.slides", "title": "生成 LaTeX Slides", "when": "editor", "handler": "publishing.slides" },

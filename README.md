@@ -480,3 +480,15 @@ Slides 和 Poster 各有 8 种内置风格，生成前在卡片界面确认画�
 `UNDEROOT_WASM_DOWNLOADS=0` 可关闭在线取包，已缓存资源仍可用。首次构建需能连接 GitHub，首次使用未缓存宏包需能连接资源服务；完整离线部署应预先构建和编译需要的模板以预热缓存。断网后只有所需资源齐全时才能编译。BibTeX、索引和交叉引用由浏览器流水线处理；本版不提供 Biber 模块、任意系统字体、外部绘图程序或 shell escape，使用这些功能的论文仍需适当调整或选择服务器编译。
 
 实现基于独立 Worker 中的 [TeXlyre-BusyTeX](https://github.com/TeXlyre/texlyre-busytex-build/tree/46ebb6216a5c1fe63dd1dc885831d1a8cef2dc86)，许可证及源代码链接见 [`public/wasm/NOTICE.md`](public/wasm/NOTICE.md)。验证命令：`npm run test:wasm:modern`；实际执行 WASM 二进制，不以服务器原生 TeX 代替浏览器引擎。
+
+## 十八、从论文到研究叙事与版面（v0.7）
+
+生成器和 `underoot-paper-publishing` skill 共用内容整理、模板与版面处理代码。每次生成记录五步预检：来源与证据盘点、研究叙事、图文/公式/表格关联、信息密度与栏位、事实与交付复核。AI 模式从完整分块证据重新组织主张标题、短要点和适当的研究边界；五步预检不会强制增加五次付费调用。本地模式明确是结构化草稿，按主题重排和去重，不能代替完整语义改写。
+
+Slides 使用研究问题→差距→方法→结果→局限→结论的讲述顺序，限制单页要点密度；插图与对应来源主题邻接，简单数值表格生成可编辑的证据页，保守支持可独立移植的原稿公式。Poster 使用保持阅读顺序的连续平衡栏位、结果视觉和自适应可读字号。复杂表格、自定义公式、同名图片歧义和原值不匹配的数字明确列为待核对项；显示层不够时保留详细笔记，不把所有来源 ID 都显示为“所有科学内容完整呈现”。
+
+主机有 XeLaTeX 时，生成过程中实际编译并用 Poppler 检查页数、文字越界和 TeX 溢出；海报问题可在 ≥32 pt 正文下修订一次再检查。缺少工具或仍有问题会明确报告，不记为视觉检查完成。生成后可展开「内容提纲与检查结果」，项目的 `underoot-publishing/<id>/` 包含 `outline.md`、完整 `notes.md`、`plan.json` 和 `review.json`，原始项目与素材保留。科学结论与最终图像仍需人工审阅。
+
+Skill 可独立于应用数据库运行：[`SKILL.md`](skills/underoot-paper-publishing/SKILL.md)。`build-publication.mjs` 支持新目录输出、人工/模型审阅后的结构化提纲、实际编译、PDF 审计与渲染；`audit-publication.py` 测量真实 PDF，另行记录尚未进行的视觉检查。CLI 默认输出本地草稿；高质量叙事请先按 skill 的五轮标准审阅并提供 `--outline`。
+
+本次五轮实际迭代、失败发现与修订记录见 [`docs/publishing-five-rounds.md`](docs/publishing-five-rounds.md)。回归使用合成论文和模拟模型；真实模型的学术表达质量仍取决于配置的服务与作者复核。

@@ -1,27 +1,52 @@
 ---
 name: underoot-paper-publishing
-description: Split long underoot LaTeX papers into traceable chunks and produce slides or academic posters with confirmed style choices. Use for paper-to-slides/poster conversion, especially manuscripts exceeding model context limits.
+description: Turn a LaTeX paper project into source-grounded research slides or a single-sheet academic poster through five editorial and layout reviews. Use for narrative rewriting, figure/equation placement, long-paper chunking, confirmed template selection, and real PDF quality checks; not just applying a theme to extracted paragraphs.
 ---
 
-# underoot paper publishing
+# Paper → research talk / poster
 
-Use the same planner as the underoot publishing extension:
+Produce a research communication artifact with a clear argument, visible evidence and readable layout. A copied paragraph inside a Beamer theme is only a draft. Read [the editorial rubric](references/editorial-rubric.md) before composing or reviewing content.
+
+Find the paper's real entry point, included sources, bibliography and assets. Keep the original project intact and create a separate output directory/project. In underoot prefer **更多 → 生成 LaTeX Slides / 学术 Poster**: preview the whole-paper split plan, confirm the style/size/length, and choose AI narrative rewriting or the clearly labelled local structured draft. Respect the user's existing style choice. Outside the UI, confirm meaningful unresolved audience, duration/size and style choices together; do not repeatedly ask for choices already supplied.
+
+Built-in choices: Slides `academic`, `minimal`, `contrast`, `sidebar`, `conference`, `clean`, `classic-talk`, `large-title`, in 16:9 or 4:3. Posters `classic`, `modern`, `compact`, `bold`, `gallery`, `editorial`, `dark`, `blueprint`, A0 portrait/landscape, 2/3 columns. PDF-imported personal templates provide approximate visual style, not recovered TeX or permission to copy logos. Check contrast and hierarchy after applying a style.
+
+## Inventory and long papers
 
 ```bash
-node skills/underoot-paper-publishing/scripts/chunk-paper.mjs --root <paper-directory> --main main.tex --out plan.json
+node scripts/chunk-paper.mjs --root <paper> --main main.tex --out plan.json
 ```
 
-For an installed skill, the command is relative to this skill's directory: `scripts/chunk-paper.mjs`. This helper has no database or model dependency. It recursively expands project-local inputs, detects cycles, and splits all expanded source by sections, paragraphs and lines into blocks of at most 16,000 characters. Oversized blocks continue in another chunk; they are transport fragments, not separately compilable TeX. `from/to` ranges and the digest allow exact coverage checks. It never edits the paper. Protect `plan.json` as manuscript content; it contains source text.
+Commands are relative to this skill directory. The helper recursively expands project-local inputs, checks cycles/traversal and splits the entire source into transport blocks ≤16,000 characters (up to 4 million expanded characters). Read and account for every chunk, especially late results and limitations. Keep chunk IDs and source locations in notes; never fit a context window by keeping only the beginning. `plan.json` contains manuscript text: keep it private.
 
-In underoot, prefer **更多 → 生成 LaTeX Slides / 生成学术 Poster**. The UI shows the split plan and asks the author to choose and confirm style, size/orientation, and density before starting. If operating outside that UI, present the same concrete choices and estimated model-call count before generation. A prior style choice remains valid unless the author changes it; do not repeatedly ask.
+For model-assisted work, summarize each block with exact findings, conditions, uncertainties and citations; combine groups of at most eight recursively. Separate evidence summaries from presentation writing. The host requests explicit consent to its displayed call budget; do not obtain keys, retry paid calls or add undisclosed model calls. Do the five reviews below with the available reasoning/tools; five reviews do not require five extra API calls.
 
-- Slides: academic (Madrid), minimal, contrast, sidebar (Berkeley), conference (Copenhagen), clean (Boadilla), classic-talk (Warsaw), or large-title (Pittsburgh); 16:9 or 4:3; target content-frame count.
-- Poster: classic, modern, compact, bold, gallery, editorial, dark, or blueprint; A0 portrait or landscape; two or three columns and target block count.
-- Personal templates may be imported from a reference PDF in the host template library or registered by a plugin. PDF extraction is local Poppler analysis of at most the first three pages, not a model call or recovery of original LaTeX. Preview the approximate palette, typography and layout, then let the author confirm before saving. Never copy source logos/images automatically or execute macros from a template JSON.
-- Default to local extraction without sending source to a model. AI mode uses the configured host service only after explicit consent to the plan's maximum number of calls. Do not obtain or print keys.
+## Five rounds — generate, inspect, revise
 
-Process **every** chunk, including late sections and limitations. In AI mode, summarize each chunk to bounded, source-grounded JSON; recursively combine batches of at most eight summaries, then form the final narrative. Keep chunk IDs through each stage, and use the manifest to check coverage. Never pass only the beginning of a long paper, remove scientific sections to fit a context window, or invent figures, references, numerical results or conclusions. Local extraction is an editable excerpt, not a validated academic abstract.
+Record a finding, concrete revision and result for each round; do not manufacture five “passed” labels from one inspection.
 
-Render the confirmed style using deterministic LaTeX templates. Generate a separate derived project from the immutable source snapshot, carrying original assets and a publishing report with chunk coverage. Keep the original paper and its branches intact. Check compilation and inspect density/overflow; shorten presentation summaries or increase pages/columns when needed, while retaining all chunk notes. Formulae, complex macros and citation formatting may need author review.
+1. **Evidence and scope.** Identify the research question, concrete gap, method, strongest measured results, baselines/units/conditions, limitations, figures, tables and useful formulas. Verify them against source. Distinguish unsupported claims from missing evidence; never fill gaps with invented experiments/references.
+2. **Narrative.** Write an audience-appropriate argument: why the problem matters → what is missing → what changes → evidence → boundary → take-home message. Rewrite into short, spoken-language points and grounded claim/question titles. One slide communicates one idea; a poster has a top-level message and a few blocks. Give methods and limitations visible space. Put secondary details in source-linked speaker notes, not silently in the trash.
+3. **Visual evidence.** Place each chosen figure/table next to the claim it supports. Preserve its caption, units, baseline and uncertainty; do not infer image content from a filename. Preserve portable source formulas as math, not mangled plain text. Keep unsupported macros/table structures in source notes and explicitly flag needed adaptation. Prefer a source-derived schematic/annotated result over decorative graphics; do not fabricate plots.
+4. **Format and layout.** Budget words, lines and visual area before rendering. Slides: usually ≤3 short bullets, roughly 40 words, readable body type; separate method, result and detail frames when necessary. Posters: balanced *contiguous* columns preserving reading order, prominent results, hierarchy, legible body/captions, exactly one sheet. Shorten content or change layout before shrinking fonts. Preserve full titles/captions in notes when a shorter display form is needed.
+5. **Compile, look, correct.** Compile the actual generated entry point, audit the resulting PDF and render pages. Inspect every page at a representative viewing size, including the final slide, figure-heavy frames and all poster columns. Check missing glyphs, overflows, crop, density, order, title/footer collisions, contrast, scientific consistency and takeaway. Revise and recompile failures. Report unresolved issues and checks not run; compilation alone is not visual or scientific approval.
 
-On cancellation, revoked access, model error or timeout, stop the job and retain the original. Do not silently switch AI mode, style, or retry paid calls. Reopen the UI to inspect an active job; a service restart interrupts in-memory jobs and requires a new explicit start.
+## Standalone builder and real PDF checks
+
+Use the shared planner/renderer without a database or model dependency:
+
+```bash
+node scripts/build-publication.mjs --root <paper> --main main.tex --kind slides --style minimal --count 12 --out <new-output>
+```
+
+This default is explicitly a **local structured draft**. For the rewritten narrative, first create a reviewed `outline.json`: `{"sections":[{"title":"grounded claim","takeaway":"one short message","bullets":["evidence with condition"],"sourceIds":["c0001"]}]}`. Map all source chunk IDs to appropriate topics; this mapping proves provenance, not semantic completeness. Run the builder with `--outline outline.json`. Review `publishing-plan.json` and `speaker-notes.md`; all unshown detail and warnings remain available.
+
+Add `--compile --audit --render` when XeLaTeX and Poppler are installed (`--engine <path>` selects XeLaTeX). The output directory must be new/empty; use another directory for the next revision. The builder copies referenced assets, never edits the paper, and writes PDF audit results plus page previews. Alternatively:
+
+```bash
+python scripts/audit-publication.py --pdf <artifact.pdf> --kind poster --log <artifact.log> --out pdf-audit.json --render-dir previews
+```
+
+The audit measures actual pages, text bounds and TeX overflow; it does not claim to have looked at the rendered images. View the previews yourself. In underoot, the backend performs native compile/bounds checks when available and records when they are unavailable; browser WASM XeLaTeX is an alternative compiler, followed by the same exported-PDF checks.
+
+Deliver the editable TeX/assets, PDF, source-linked notes, five-round findings and remaining caveats. State which semantic, compilation and visual checks actually ran. On cancellation, lost access, model error or compilation failure, retain the original and the reviewable draft; stop with the concrete issue instead of presenting it as finished.

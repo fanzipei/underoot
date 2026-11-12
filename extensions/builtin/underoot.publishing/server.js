@@ -14,6 +14,9 @@ import { summarizePaper } from './summarize.mjs';
 import { flushProject } from '../../../server/collab.js';
 import { memberRole } from '../../../server/db.js';
 import { listCustomTemplates } from '../../../server/publishing-templates.js';
+import {sourceEvidence,argument}from'../../../skills/underoot-paper-publishing/scripts/source-evidence.mjs';
+import {editorialPlan}from'../../../skills/underoot-paper-publishing/scripts/editorial-plan.mjs';
+import{auditDraft}from'./layout-audit.mjs';
 export { publishingStyles };
 export const plainLatex = plainText;
 export function expandedSource(project) { return expandPaper(projectDir(project.id), project.main_file).source; }
@@ -21,8 +24,8 @@ function prepare(project, root = projectDir(project.id)) {
  if (!fs.existsSync(resolveInside(root, project.main_file))) throw failure(400, '论文主文件不存在，请先设置有效主文件');
  const expanded = expandPaper(root, project.main_file);
  const source = expanded.source;
- const title = plainText(source.match(/\\title(?:\[[^\]]*\])?\{([^}]+)\}/)?.[1] || project.name);
- const author = plainText(source.match(/\\author(?:\[[^\]]*\])?\{([^}]+)\}/)?.[1] || '');
+ const title = plainText(argument(source,'title')?.value || project.name);
+ const author = plainText(argument(source,'author')?.value || '');
  const figures = [];
  const prefixes = [...source.matchAll(/\\graphicspath\{((?:\{[^}]*\})+)\}/g)].flatMap((m) => [...m[1].matchAll(/\{([^}]*)\}/g)].map((p) => p[1]));
  for (const match of source.matchAll(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g)) {
@@ -32,9 +35,10 @@ function prepare(project, root = projectDir(project.id)) {
    try { if (fs.statSync(resolveInside(root, rel)).isFile() && !figures.includes(rel)) figures.push(rel); } catch { /* absent */ }
   }
  }
- const selected = figures.slice(0,4);
+ const selected = figures.slice(0,8);
  const digest = hash(source + JSON.stringify(selected.map((rel) => [rel,hash(fs.readFileSync(resolveInside(root,rel)))])));
- return { ...paperPlan(source, { title, author, files:expanded.files, warnings:expanded.warnings }), digest, figures:selected };
+ const plan=paperPlan(source,{title,author,files:expanded.files,warnings:expanded.warnings});
+ return { ...plan, digest, figures:selected,...sourceEvidence(source,plan.chunks,selected) };
 }
 export function publishingPlan(project,userId) {
  flushProject(project.id);
@@ -68,16 +72,26 @@ export async function deriveProject(project, userId, body, runtime = {}) {
    model: (instruction,input) => callModel(instruction,input,[],{ timeout:60000,signal:runtime.signal }),
    progress: runtime.progress, check });
   check(); runtime.progress?.({ phase:'render', message:'正在应用确认的风格并保存独立项目', modelCalls:summary.modelCalls });
-  const content = renderPublication({ ...plan, sections:summary.sections }, options);
+  const editorial=editorialPlan(plan,summary,options);
+  const content = renderPublication({ ...plan, sections:summary.sections,editorial }, options);
   fs.mkdirSync(dir, { recursive:true }); materialize(source, dir);
   let entry = options.kind === 'slides' ? 'presentation.tex' : 'academic-poster.tex';
   if (fs.existsSync(resolveInside(dir,entry))) entry = `${options.kind}-${id.slice(0,8)}.tex`;
   fs.writeFileSync(resolveInside(dir,entry),content,'utf8');
+  let layout=await auditDraft(id,entry,options,{check,progress:runtime.progress});
+  if(layout.status==='needs-review'&&options.kind==='poster'){
+   runtime.progress?.({phase:'revise',message:'海报版面检查发现问题，正在以不低于 32 pt 正文修订一次'});
+   editorial.posterFont=32;editorial.rounds[4].changes.push('根据真实编译反馈，将自适应海报正文调整至 32 pt 后复检一次');
+   fs.writeFileSync(resolveInside(dir,entry),renderPublication({...plan,sections:summary.sections,editorial},options),'utf8');
+   layout=await auditDraft(id,entry,options,{check,progress:runtime.progress});
+  }
   const reportPath = `underoot-publishing/${id}/plan.json`;
   const reportDir = resolveInside(dir,`underoot-publishing/${id}`); fs.mkdirSync(reportDir,{recursive:true});
   const { chunks, ...metadata } = plan;
   fs.writeFileSync(resolveInside(dir,reportPath),JSON.stringify({ ...metadata, options, sourceRevision:source.id, useAI:!!body.useAI, modelCalls:summary.modelCalls,
-   chunks:chunks.map(({text,...metadata})=>metadata), notes:summary.notes, sections:summary.sections },null,2));
+   chunks:chunks.map(({text,...metadata})=>metadata), notes:summary.notes, sections:summary.sections,editorial,layout },null,2));
+  fs.writeFileSync(path.join(reportDir,'outline.md'),'# 内容提纲与检查\n\n'+editorial.pages.map((p,i)=>`## ${i+1}. ${p.title}\n\n${p.takeaway}\n\n${p.bullets.map(b=>'- '+b).join('\n')}\n\n来源：${p.sourceIds.join(', ')}\n`).join('\n')+'\n# 待核对\n\n'+editorial.warnings.map(w=>'- '+w).join('\n'));
+  fs.writeFileSync(path.join(reportDir,'review.json'),JSON.stringify({rounds:editorial.rounds,metrics:editorial.metrics,warnings:editorial.warnings,compilation:layout,visualInspection:{status:'not-run'}},null,2));
   fs.writeFileSync(path.join(reportDir,'notes.md'), '# 全稿分块处理记录\n\n'+summary.notes.map((n)=>`## ${n.id} · ${n.title}\n\n字符范围 ${n.from}–${n.to}\n\n${n.summary}\n`).join('\n'));
   const engine = detectEngines().engines.some((e)=>e.id==='xelatex')?'xelatex':null; const ts=now();
   db.prepare('INSERT INTO projects(id,owner_id,name,main_file,template,engine,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
@@ -86,7 +100,8 @@ export async function deriveProject(project, userId, body, runtime = {}) {
   snapshot(id,userId,`由 ${project.name} / ${source.id.slice(0,8)} 派生 · ${options.style}`,'derive',true);
   return { project:{id,name:`${project.name} · ${options.kind}`,mainFile:entry},sourceRevision:source.id,reportPath,options,
    coverage:{chunks:plan.chunkCount,processed:summary.notes.length,chars:plan.chars,modelCalls:summary.modelCalls},
-   warning:`已处理全部 ${plan.chunkCount} 个分块并按所选风格生成独立项目，原稿保留。${body.useAI?'AI 摘要':'本地节选'}需核对事实、公式、引用和版面；完整分块记录随新项目保存。` };
+   editorial:{pages:editorial.metrics.pages,outline:editorial.pages.map(p=>({title:p.title,takeaway:p.takeaway})),warnings:editorial.warnings,layout},
+   warning:`已完成来源盘点、叙事组织、图文关联、版面预检与复核，原稿保留。${layout.status==='passed'&&layout.boundsStatus==='checked'?'真实编译与页面检查通过；':layout.status==='passed'?'真实编译通过，PDF 边界检查未完成；':layout.status==='needs-review'?'版面仍有问题，请查看检查记录并继续修订；':'尚未真实编译；'}${body.useAI?'AI 叙事初稿':'本地结构化草稿'}仍需人工核对事实、图像内容与可读性；提纲、完整分块笔记和五轮检查记录随项目保存。` };
  } catch(error) {
   db.prepare('DELETE FROM projects WHERE id=?').run(id);
   if(fs.existsSync(dir)) fs.rmSync(dir,{recursive:true,force:true}); throw error;

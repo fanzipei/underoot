@@ -238,7 +238,7 @@ try {
   const slidesTex = (await req(`/api/projects/${slides.data.project.id}/file?path=presentation.tex`, owner)).data.content;
   const posterTex = (await req(`/api/projects/${poster.data.project.id}/file?path=academic-poster.tex`, owner)).data.content;
   check('Slides 从论文内容生成，不是空白模板', slidesTex.includes('Reliable research') && slidesTex.includes('measured result is 42') && slidesTex.includes('figure.png'));
-  check('Poster 包含正文与 A0 三栏版式', posterTex.includes('a0paper') && posterTex.includes('multicols}{3}') && posterTex.includes('measured result is 42'));
+  check('Poster 包含正文与 A0 三栏版式', posterTex.includes('a0paper') && posterTex.includes('postercolumns}{3}') && posterTex.includes('measured result is 42'));
   check('派生项目保留来源版本记录', (await req(`/api/workspace/projects/${slides.data.project.id}/history`, owner)).data.revisions.some((r) => r.kind === 'derive'));
   const engines = (await req('/api/system/engines', owner)).data.engines;
   if (engines.some((engine) => engine.id === 'xelatex')) {

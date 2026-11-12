@@ -13,7 +13,7 @@ export function startPublishing(project, userId, body) {
  const plan = publishingPlan(project,userId);
  if (plan.digest !== body.planDigest) throw failure(409,'稿件或插图已变化，请重新预览后确认');
  if (body.useAI && (body.consent !== true || body.maxModelCalls !== plan.modelCalls)) throw failure(400,'请确认当前分块计划的模型调用次数');
- if (body.useAI && !aiConfig().configured) throw failure(503,'请先配置模型 API 或选择本地节选');
+ if (body.useAI && !aiConfig().configured) throw failure(503,'请先配置模型 API 或选择本地结构化草稿');
  for (const [id,job] of jobs) if (!active(job) && Date.now()-job.updatedAt>3600000) jobs.delete(id);
  if ([...jobs.values()].some((j)=>active(j)&&(j.projectId===project.id||j.userId===userId))) throw failure(409,'你或此项目已有生成任务，请先查看或取消');
  if ([...jobs.values()].filter(active).length>=2) throw failure(429,'生成队列正忙，请稍后重试');

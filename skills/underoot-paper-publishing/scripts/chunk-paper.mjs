@@ -45,11 +45,12 @@ export function expandPaper(root, main) {
  return { source, files: [...files], warnings: [...warnings] };
 }
 export function plainText(text) {
- return String(text).replace(/(?<!\\)%[^\n]*/g, '').replace(/\\(?:begin|end)\{[^}]+\}(?:\[[^\]]*\])?/g, ' ')
+ return String(text).replace(/(?<!\\)%[^\n]*/g, '').replace(/\\begin\{(?:equation|align|gather|multline|eqnarray)\*?\}[\s\S]*?\\end\{(?:equation|align|gather|multline|eqnarray)\*?\}/g,' [公式见原稿] ').replace(/\\(?:begin|end)\{[^}]+\}(?:\[[^\]]*\])?/g, ' ')
   .replace(/\\(?:label|includegraphics|bibliography|bibliographystyle|input|include)(?:\[[^\]]*\])?\{[^}]*\}/g, '')
   .replace(/\\(?:textbf|textit|emph|texttt|underline)\{([^{}]*)\}/g, '$1')
   .replace(/\\(?:cite\w*|ref|eqref)\{([^{}]*)\}/g, '[$1]')
   .replace(/\$\$[\s\S]*?\$\$|\$[^$]*\$|\\\[[\s\S]*?\\\]/g, ' [公式见原稿] ')
+  .replace(/\\([%&_#$])/g,'$1')
   .replace(/\\[a-zA-Z@]+\*?(?:\[[^\]]*\])?/g, ' ').replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
 }
 export function splitPaper(source, max = CHUNK_CHARS) {
@@ -88,8 +89,8 @@ export function paperPlan(source, extra = {}) {
   sectionCount: new Set(chunks.map((c) => c.section)).size, modelCalls: chunks.length + reductionCalls + 1,
   ...extra, chunks };
 }
-export function extractSummary(text, limit = 1100) {
- const plain = plainText(text); if (plain.length <= limit) return plain;
+export function extractSummary(text, limit = 1100, alreadyPlain = false) {
+ const plain = alreadyPlain ? String(text).replace(/\s+/g,' ').trim() : plainText(text); if (plain.length <= limit) return plain;
  const sentences = plain.match(/[^。！？.!?]+[。！？.!?]*(?:\s+|$)/g) || [plain];
  const scored = sentences.map((s,i) => ({ s: s.trim(), i, score: (i===0?4:0)+(i===sentences.length-1?5:0)+(/result|conclu|limitation|method|accuracy|improv|结果|结论|方法|局限|贡献|发现|\d/i.test(s)?3:0) }));
  let remaining = limit; const selected = []; const seen = new Set();

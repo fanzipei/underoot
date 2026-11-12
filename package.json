@@ -1,6 +1,6 @@
 {
   "name": "underoot",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "可插件扩展、可本地部署的 vibe research 协作平台",
@@ -17,7 +17,8 @@
     "test:wasm": "node scripts/wasm-test.mjs",
     "test:wasm:modern": "node scripts/tex-cache-test.mjs && node scripts/test-isolated.mjs --modern-wasm",
     "test:git": "node scripts/git-sync-test.mjs",
-    "test:publishing": "node scripts/publishing-unit-test.mjs && node scripts/test-isolated.mjs --publishing",
+    "test:publishing": "node scripts/publishing-unit-test.mjs && node scripts/publishing-editorial-test.mjs && node scripts/test-isolated.mjs --publishing",
+    "test:publishing:quality": "node scripts/publishing-quality-test.mjs",
     "test:assistant": "node scripts/assistant-economy-unit.mjs && node scripts/test-isolated.mjs --economy",
     "test:templates": "node scripts/test-isolated.mjs --templates"
   },
