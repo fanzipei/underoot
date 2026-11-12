@@ -4,7 +4,7 @@ const identifier=String.raw`(?:\\(?:[cC]ref|[aA]utoref|[eE]qref|ref)\s*\{[^}]*\}
 const reference=String.raw`(?:(?:fig(?:ure)?s?|tables?|sections?|secs?|equations?|eqs?|appendi(?:x|ces))\.?\s*(?:\\?~|\s)*${identifier}|\\(?:[cC]ref|[aA]utoref|[eE]qref|ref)\s*\{[^}]*\}|\[(?:fig(?:ure)?|sec(?:tion)?|tab(?:le)?|eq(?:uation)?|app(?:endix)?):[^\]]+\])`;
 const ref=new RegExp(reference,'i');
 export function standaloneText(value){
- let source=String(value||'').replace(/\*\*/g,'').replace(/\\?~/g,' ').replace(/\s+/g,' ').trim();
+ let source=String(value||'').replace(/\*\*/g,'').replace(/\\~/g,' ').replace(/\s+/g,' ').trim();
  const result=[];
  // Protect Fig./Eq./Sec. abbreviations from sentence splitting.
  source=source.replace(/\b(Figs?|Eqs?|Secs?)\./gi,'$1');
@@ -18,7 +18,7 @@ export function standaloneText(value){
   // never become orphaned labels or guessed descriptions in public copy.
   if(ref.test(sentence)||/\[(?:fig|sec|tab|eq)[\w-]*:/i.test(sentence))continue;
   sentence=sentence.replace(/^[,;:]\s*/,'').trim();if(!/[\p{L}\p{N}]/u.test(sentence))continue;
-  result.push((rewriteSubject||intro)?sentence[0].toLocaleUpperCase()+sentence.slice(1):sentence);
+  result.push(((rewriteSubject||intro)&&/^[a-z]{2,}\b(?!\s*[(=<>])/.test(sentence))?sentence[0].toLocaleUpperCase()+sentence.slice(1):sentence);
  }
  return result.join(' ');
 }

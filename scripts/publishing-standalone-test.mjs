@@ -38,6 +38,8 @@ const cases=[
  [String.raw`A 6.9% gain with a 95% interval; the scope is limited to Tokyo.`, 'A 6.9% gain with a 95% interval; the scope is limited to Tokyo.'],
  [String.raw`The method uses Figure~[fig:omitted] for its explanation.`, ''],
  [String.raw`Figure~[framework] illustrates that scope is limited to one city.`, 'Scope is limited to one city.'],
+ [String.raw`Accuracy is ~80% under a fixed budget.`, 'Accuracy is ~80% under a fixed budget.'],
+ [String.raw`Figure~[fig:result] shows p < 0.05 in five seeds.`, 'p < 0.05 in five seeds.'],
  [String.raw`p < 0.05; only five seeds.`, 'p < 0.05; only five seeds.'],
  [String.raw`Travel-time map and event effects. See Figure 7.`, 'Travel-time map and event effects.'],
 ];
