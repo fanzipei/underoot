@@ -12,7 +12,7 @@ process.env.LATEXSTUDIO_DATA=qaRoot;
 const{auditDraft}=await import('../extensions/builtin/underoot.publishing/layout-audit.mjs');const{projectDir}=await import('../server/paths.js');const{materializeBranding}=await import('../extensions/builtin/underoot.publishing/branding.mjs');
 const source=fs.readFileSync('scripts/fixtures/publishing/main.tex','utf8').replace('\\author{Synthetic Research Fixture}','\\author[1]{Alice Example}\\author[2]{Bob Example}\\affil[1]{Example University}\\affil[2]{Example Institute}');
 let count=0;
-for(const kind of['poster','slides'])for(const style of(kind==='poster'?['gallery','dark']:['minimal','sidebar'])){
+for(const kind of['poster','slides'])for(const style of(kind==='poster'?['gallery','dark']:['metropolis','minimal','sidebar'])){
  const id='fit-'+kind+'-'+style,dir=projectDir(id);fs.mkdirSync(dir,{recursive:true});fs.copyFileSync('scripts/fixtures/publishing/accuracy.png',path.join(dir,'accuracy.png'));
  const options=publishingOptions({kind,style,orientation:style==='dark'?'landscape':'portrait',columns:3,count:kind==='slides'?12:6});
  const plan=paperPlan(source,{title:'Source-grounded evidence and responsible research communication',author:'Alice Example; Bob Example'});Object.assign(plan,sourceEvidence(source,plan.chunks,['accuracy.png']));

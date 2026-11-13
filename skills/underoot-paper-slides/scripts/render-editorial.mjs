@@ -1,3 +1,4 @@
+import {renderNativeSlides} from './render-slides-native.mjs';
 import{renderDiagram}from'./vector-diagram.mjs';
 import {standaloneEditorial} from './standalone-copy.mjs';
 const tex=(v)=>String(v??'').replace(/[\\{}$&#_%~^]/g,c=>({'\\':'\\textbackslash{}','{':'\\{','}':'\\}','$':'\\$','&':'\\&','#':'\\#','_':'\\_','%':'\\%','~':'\\textasciitilde{}','^':'\\textasciicircum{}'}[c]));
@@ -26,53 +27,7 @@ export function posterFontFor(story,options,style){
 export function renderEditorial(info,options,style){
  const story=standaloneEditorial(info.editorial,info.chunks||[]);const identity=story.identity||info.identity||{authors:info.author,affiliations:'',contact:'',logos:[]};const accent=style.accent.slice(1);const bg=(style.background||'#ffffff').slice(1);const fg=(style.foreground||'#1c2933').slice(1);
  const rgb=[1,3,5].map(p=>parseInt(style.accent.slice(p,p+2),16));const bandInk=rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722>160?'black':'white';
- if(options.kind==='slides'){
-  const frames=story.pages.map(original=>{
-   const page={...original};if(page.appendix)page.title='Additional comparisons';if(page.takeaway&&page.bullets.some(b=>b.includes(page.takeaway)&&b.length>page.takeaway.length))page.takeaway='';
-   const visual=page.figures[0];const key=page.takeaway?`\\textbf{${tex(page.takeaway)}}\\par\\medskip\n`:'';
-   const text=key+items(page)+equation(page)+tables({...page,tableFont:14},'slides')+renderDiagram(page.diagram,tex);
-   const font=story.slideFont||16;
-   const layout=page.layout||(visual?'visual':'split');
-   const graphic=visual?`\\centering\\includegraphics[width=\\linewidth,height=${page.figureHeight||.50}\\textheight,keepaspectratio]{${visual.path}}\\par\\smallskip{\\fontsize{10}{13}\\selectfont ${caption(visual,page.title)}}`:'';
-   let body;
-   if(visual&&!page.bullets.length&&!page.takeaway)body=graphic;
-   else if(page.diagram&&!visual)body=`{\\fontsize{${font}}{${font+5}}\\selectfont ${key}${items(page)}}${renderDiagram(page.diagram,tex)}`;
-   else if(visual&&layout==='visual'&&style.theme!=='Berkeley')body=`{\\fontsize{${font}}{${font+3}}\\selectfont ${key}}\\begin{columns}[T,onlytextwidth]\\begin{column}{.60\\textwidth}${graphic}\\end{column}\\begin{column}{.36\\textwidth}\\fontsize{${font}}{${font+3}}\\selectfont ${items(page)}${equation(page)}${tables(page,'slides')}\\end{column}\\end{columns}`;
-   else if(visual)body=`\\begin{columns}[T,onlytextwidth]\\begin{column}{.47\\textwidth}\\fontsize{${font}}{${font+3}}\\selectfont ${text}\\end{column}\\begin{column}{.49\\textwidth}${graphic}\\end{column}\\end{columns}`;
-   else if(layout==='comparison'&&page.bullets.length>=2){const cut=Math.ceil(page.bullets.length/2);body=key+`\\begin{columns}[T,onlytextwidth]${[page.bullets.slice(0,cut),page.bullets.slice(cut)].map(b=>`\\begin{column}{.47\\textwidth}\\fontsize{${Math.min(font,24)}}{${Math.min(font,24)+4}}\\selectfont ${items({...page,takeaway:'',bullets:b})}\\end{column}`).join('')}\\end{columns}`+equation(page)+tables({...page,tableFont:14},'slides')+renderDiagram(page.diagram,tex);}
-   else if(layout==='statement')body=`\\vspace{.07\\textheight}{\\fontsize{${font}}{${font+6}}\\selectfont\\color{underootaccent}${tex(page.takeaway)}}\\par\\bigskip{\\fontsize{${Math.min(font,24)}}{${Math.min(font,24)+4}}\\selectfont ${items(page)}}${equation(page)}${tables(page,'slides')}`;
-   else body=`\\fontsize{${Math.min(font,24)}}{${Math.min(font,24)+4}}\\selectfont\n${text}`;
-   return`% underoot:block:${page.id}:start\n\\begin{frame}[${page.centered?'c':'t'}]{${tex(page.title)}}\n\\begin{lrbox}{\\underootslidebox}\\begin{minipage}{\\textwidth}\n${body}\n\\end{minipage}\\end{lrbox}\n\\typeout{UNDEROOT:SLIDE:${page.id}:\\the\\dimexpr\\ht\\underootslidebox+\\dp\\underootslidebox\\relax:\\the\\dimexpr\\textheight-3\\baselineskip\\relax}\n\\usebox{\\underootslidebox}\n\\end{frame}\n% underoot:block:${page.id}:end`;
-  }).join('\n\n');
-  return`\\documentclass[aspectratio=${options.ratio},fontset=fandol]{ctexbeamer}
-\\usepackage{graphicx,amsmath,amssymb,booktabs,tabularx,tikz}\n\\usetikzlibrary{arrows.meta}\n\\newsavebox{\\underootslidebox}
-\\usetheme{${style.theme||'default'}}
-${style.font==='serif'?'\\usefonttheme{serif}':''}
-\\definecolor{underootaccent}{HTML}{${accent}}
-\\definecolor{templatebg}{HTML}{${bg}}
-\\definecolor{templatefg}{HTML}{${fg}}
-\\setbeamercolor{background canvas}{bg=templatebg}
-\\setbeamercolor{normal text}{fg=templatefg}
-\\setbeamercolor{structure}{fg=underootaccent}
-\\setbeamercolor{frametitle}{fg=${options.style==='contrast'||style.header==='band'?bandInk:'underootaccent'},bg=${options.style==='contrast'||style.header==='band'?'underootaccent':'templatebg'}}
-\\setbeamerfont{frametitle}{size=\\fontsize{22}{26}\\selectfont}\n\\setbeamerfont{title}{size=\\fontsize{22}{26}\\selectfont}\n\\setbeamerfont{author}{size=\\fontsize{16}{20}\\selectfont}\n\\setbeamerfont{institute}{size=\\fontsize{10}{13}\\selectfont}\n\\setbeamertemplate{navigation symbols}{}
-\\setbeamertemplate{itemize items}[circle]
-\\setlength{\\parskip}{.35em}
-\\title[{${tex(short(info.title))}}]{${tex(info.title)}}
-\\author[{${tex(short(identity.authors||info.author,28))}}]{${names(identity.authors||info.author)}}\n\\institute{${lines(identity.affiliations||'')}}\n\\titlegraphic{${(identity.logos||[]).map(p=>`\\includegraphics[height=.7cm,width=2cm,keepaspectratio]{${p}}\\hspace{.3cm}`).join('')}${identity.qrPath?`\\includegraphics[height=1cm]{${identity.qrPath}}`:''}}
-\\date{}
-\\begin{document}
-\\begin{frame}[plain]\\centering
-\\begin{minipage}{.96\\textwidth}\\centering
-{\\fontsize{22}{26}\\selectfont\\bfseries\\color{underootaccent}${tex(info.title)}}\\par\\medskip
-{\\fontsize{10}{13}\\selectfont ${names(identity.authors||info.author)}}\\par\\smallskip
-{\\fontsize{10}{13}\\selectfont ${lines(identity.affiliations||'')}}\\par\\smallskip
-${(identity.logos||[]).map(p=>`\\includegraphics[height=.5cm,width=1.5cm,keepaspectratio]{${p}}\\hspace{.3cm}`).join('')}${identity.qrPath?`\\includegraphics[height=.5cm]{${identity.qrPath}}`:''}
-\\end{minipage}\\end{frame}
-${frames}
-\\end{document}
-`;
- }
+ if(options.kind==='slides')return renderNativeSlides(info,options,style,story,identity);
  const font=posterFontFor(story,options,style);const columnsCount=story.posterColumns||options.columns;
  const block=(page)=>{
   const visual=page.figures[0];

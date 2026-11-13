@@ -11,8 +11,9 @@ const expose = ({ controller, userId, ...job }) => job;
 export function startPublishing(project, userId, body) {
  const draft=body.draftId?getSession(project,userId,body.draftId):null;
  if(draft&&(!body.confirmed||body.version!==draft.version))throw failure(409,'请保存并确认当前提纲');
- if(draft)body={...body,...draft.options,useAI:false,planDigest:'approved'};
- const options = draft?.options || publishingOptions(body,listCustomTemplates(userId));
+ const reflowOptions=draft&&body.phase==='reflow'?publishingOptions({...draft.options,...Object.fromEntries(['style','orientation','ratio','columns'].filter(k=>body[k]!==undefined).map(k=>[k,body[k]]))},listCustomTemplates(userId)):null;
+ const options = reflowOptions || draft?.options || publishingOptions(body,listCustomTemplates(userId));
+ if(draft)body={...body,...options,useAI:false,planDigest:'approved'};
  if (body.confirmed !== true || !body.planDigest) throw failure(400,'请先查看分块计划并确认生成风格');
  const plan = draft?{digest:'approved'}:publishingPlan(project,userId);
  if (!draft&&plan.digest !== body.planDigest) throw failure(409,'稿件或插图已变化，请重新预览后确认');

@@ -33,10 +33,9 @@ export function adjustLayout(story,options,measured,usage,overflow=false){
   if(overflow&&story.posterFont===32)story.posterLeading=story.posterFont+5;
   story.posterFigureHeight=clamp(Number(((story.posterFigureHeight||(options.orientation==='landscape'?14:19))*factor).toFixed(1)),story.posterGap?8:10,options.orientation==='landscape'?30:38);
  }else if(usage.maximum>.96){
-  if((story.slideFont||16)<=14){const split=[],used=new Set(story.pages.map(p=>p.id));let serial=0;const nextId=id=>{let candidate;do{candidate=id+'-split-'+(++serial);}while(used.has(candidate));used.add(candidate);return candidate;};let changed=false;for(const page of story.pages){const fill=usage.pages.find(p=>p.id===page.id)?.fill||0;if(fill>1&&!page.figures.length&&!page.diagram){if(page.tables?.length===1&&page.tables[0].rows.length>1){const cut=Math.ceil(page.tables[0].rows.length/2);split.push({...page,tables:[{...page.tables[0],rows:page.tables[0].rows.slice(0,cut)}]},{...page,id:nextId(page.id),tables:[{...page.tables[0],rows:page.tables[0].rows.slice(cut)}]});changed=true;continue;}if(page.takeaway&&page.bullets.some(b=>b!==page.takeaway)){split.push({...page,bullets:[],tables:[],equations:[]},{...page,id:nextId(page.id),takeaway:''});changed=true;continue;}if(page.bullets.length>1){split.push(...page.bullets.map((b,i)=>({...page,id:i?nextId(page.id):page.id,takeaway:'',bullets:[b],equations:i?[]:page.equations})));changed=true;continue;}}split.push(page);}if(changed){story.pages=split;if(story.metrics)story.metrics.pages=split.length;return true;}}
+  {const split=[],used=new Set(story.pages.map(p=>p.id));let serial=0;const nextId=id=>{let candidate;do{candidate=id+'-split-'+(++serial);}while(used.has(candidate));used.add(candidate);return candidate;};let changed=false;for(const page of story.pages){const fill=usage.pages.find(p=>p.id===page.id)?.fill||0;if(fill>1&&!page.figures.length&&!page.diagram){if(page.tables?.length===1&&page.tables[0].rows.length>1){const cut=Math.ceil(page.tables[0].rows.length/2);split.push({...page,tables:[{...page.tables[0],rows:page.tables[0].rows.slice(0,cut)}]},{...page,id:nextId(page.id),tables:[{...page.tables[0],rows:page.tables[0].rows.slice(cut)}]});changed=true;continue;}if(page.takeaway&&page.bullets.some(b=>b!==page.takeaway)){split.push({...page,bullets:[],tables:[],equations:[]},{...page,id:nextId(page.id),takeaway:''});changed=true;continue;}if(page.bullets.length>1){split.push(...page.bullets.map((b,i)=>({...page,id:i?nextId(page.id):page.id,takeaway:'',bullets:[b],equations:i?[]:page.equations})));changed=true;continue;}}split.push(page);}if(changed){story.pages=split;if(story.metrics)story.metrics.pages=split.length;return true;}}
 
-  // All body text in the deck uses one size. Never enlarge sparse slides.
-  story.slideFont=clamp(Math.round((story.slideFont||16)*clamp(.88/usage.maximum,.85,.96)),14,16);
+  // Keep the theme typography. Split content or reduce the image, never its font.
   for(const page of story.pages)if(page.figures.length)page.figureHeight=clamp(Number(((page.figureHeight||.50)*.9).toFixed(2)),.30,.50);
  }
 
@@ -46,7 +45,7 @@ export function adjustLayout(story,options,measured,usage,overflow=false){
 export async function fitPublication(info,options,{render,write,audit,check=()=>{},progress=()=>{},maxRounds=8}){
  let story=info.editorial,best=null,lastContent;const rounds=[];
  for(const page of story.pages){delete page.posterShare;delete page.posterGaps;delete page.posterBoxCorrection;}
- if(options.kind==='slides')story.slideFont=16;
+ if(options.kind==='slides'){delete story.slideFont;for(const page of story.pages)delete page.slideFont;}
  if(options.kind==='poster')story.posterFont=posterFontFor(story,options,options.customTemplate||{});
  const limit=Math.max(1,Math.min(8,Math.floor(maxRounds))),trials=options.kind==='poster'?Math.max(1,limit-2):limit;
  for(let round=1;round<=trials;round++){

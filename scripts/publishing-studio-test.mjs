@@ -6,6 +6,7 @@ import path from'node:path';
 import fs from'node:fs';
 import {renderEditorial as legacyRender}from'../skills/underoot-paper-publishing/scripts/render-editorial-v2.mjs';
 import {renderEditorial as v3Render}from'../skills/underoot-paper-publishing/scripts/render-editorial-v3.mjs';
+import {renderEditorial as v5Render}from'../skills/underoot-paper-publishing/scripts/render-editorial-v5.mjs';
 import {publishingStyles}from'../extensions/builtin/underoot.publishing/styles.mjs';
 const BASE=process.env.BASE_URL;let checks=0,calls=0,lastInput,malformed=false,flowReply=false;
 const check=(name,value)=>{assert.ok(value,name);checks++;console.log('✓',name);};
@@ -66,6 +67,13 @@ try{
  let original=(await req(file,owner)).data.content;
  check(kind+' generated identity contains all authors and units',['Alice Example','Bob Example','Example University','Example Institute'].every(s=>original.includes(s)));
  const qr=await fetch(BASE+`/api/projects/${derived}/raw?path=${encodeURIComponent(draft.identity.qrPath)}`,{headers:{cookie:owner}});const qrBytes=Buffer.from(await qr.arrayBuffer());check(kind+' QR is generated locally as a real PNG',qr.status===200&&qrBytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])));
+ if(kind==='slides'){
+  const prior=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const saved=JSON.parse(prior.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);saved.rendererVersion=5;
+  const oldTex=v5Render({...saved.plan,editorial:saved.editorial},saved.options,publishingStyles.slides.find(s=>s.id===saved.options.style));prior.prepare('UPDATE publishing_sessions SET payload=? WHERE id=?').run(JSON.stringify(saved),draft.id);prior.close();await req(file,owner,'PUT',{content:oldTex});
+  const upgraded=await req(`/api/workspace/projects/${derived}/derive/jobs`,owner,'POST',{phase:'reflow',draftId:draft.id,version:draft.version,confirmed:true,identity,style:'metropolis'});const native=await wait(upgraded.data.id,`/api/workspace/projects/${derived}/derive`);
+  check('v5 output upgrades to native theme without a false manual-edit conflict',native.status==='complete');draft=native.result.draft;original=(await req(file,owner)).data.content;
+  check('native upgrade retains content and removes absolute font overrides',draft.pages.some(p=>p.title==='A user-reviewed research question')&&original.includes('\\usetheme{metropolis}')&&!original.includes('\\fontsize'));
+ }
  // Recreate the v0.8 session format to exercise upgrade/reflow of existing outputs.
  const migration=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const payload=JSON.parse(migration.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);if(kind==='slides'){delete payload.rendererVersion;delete payload.editorial.identity;}else{payload.rendererVersion=3;payload.preamblePrefix='% retained package-option repair\n';}
  const legacy=(payload.preamblePrefix||'')+(kind==='slides'?legacyRender:v3Render)({...payload.plan,editorial:payload.editorial},payload.options,publishingStyles[kind].find(s=>s.id===payload.options.style));migration.prepare('UPDATE publishing_sessions SET payload=? WHERE id=?').run(JSON.stringify(payload),draft.id);migration.close();await req(file,owner,'PUT',{content:legacy});

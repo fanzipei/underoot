@@ -11,7 +11,7 @@ export async function openPublishing(project,kind='slides'){
   root.querySelector('[data-close]').onclick=()=>{closed=true;close();};root.querySelector('[data-cancel]').onclick=async()=>{if(job)await api.post(base+'/jobs/'+job.id+'/cancel',{});};
   try{
    const previous=sessionStorage.getItem(key);job=previous?await api.get(base+'/jobs/'+previous).catch(()=>null):null;
-   if(!job||['failed','cancelled','complete'].includes(job.status))job=await api.post(base+'/jobs',{phase:'instant',kind,style:kind==='slides'?'minimal':'gallery',ratio:'169',orientation:'landscape',columns:3,count:kind==='slides'?18:6,confirmed:true,planDigest:plan.digest,useAI:ai.configured,consent:ai.configured,maxModelCalls:plan.modelCalls});
+   if(!job||['failed','cancelled','complete'].includes(job.status))job=await api.post(base+'/jobs',{phase:'instant',kind,style:kind==='slides'?'metropolis':'gallery',ratio:'169',orientation:'landscape',columns:3,count:kind==='slides'?18:6,confirmed:true,planDigest:plan.digest,useAI:ai.configured,consent:ai.configured,maxModelCalls:plan.modelCalls});
    sessionStorage.setItem(key,job.id);
    while(['running','queued'].includes(job.status)){label.textContent=job.progress.message;await new Promise(r=>setTimeout(r,1000));job=await api.get(base+'/jobs/'+job.id);}
    sessionStorage.removeItem(key);

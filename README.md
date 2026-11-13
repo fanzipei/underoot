@@ -4,7 +4,7 @@
 
 一个**可插件扩展、可本地部署的 vibe research 平台**。用 LaTeX 写作与 PDF 审阅作为第一种研究工作流，连接 AI 建议、协作讨论、项目搜索、学术传播和可追溯版本。核心数据保存在本机 `data/`；模型与在线文献检索由用户按需启用。
 
-> 当前版本：**v0.10.0** · 论文审阅、协作与版本工作台。仓库：[fanzipei/underoot](https://github.com/fanzipei/underoot)。
+> 当前版本：**v0.10.1** · 论文审阅、协作与版本工作台。仓库：[fanzipei/underoot](https://github.com/fanzipei/underoot)。
 
 ---
 
@@ -528,3 +528,11 @@ latexmk 根据主文件标题区的 CTeX/fontspec 声明自动使用 XeLaTeX，�
 Slides 不以填满页面为目标。标题、正文、图注、表格/流程图各使用统一层级；遇到溢出优先拆页、必要时整套统一调整正文大小。主报告突出原方法图和核心实验比较，宽表按指标/行拆开，完整比较放入补充页。流程图使用有来源的结构化 TikZ 矢量节点与连线。Poster 则优先安排核心方法/结果图、数值对比、完整署名和整张画布的阅读顺序。选行保留本文方法与基线，并在记录中披露未展示的指标/行。
 
 独立技能：[`underoot-paper-slides`](skills/underoot-paper-slides/SKILL.md) 与 [`underoot-paper-poster`](skills/underoot-paper-poster/SKILL.md)，分别附真实会议样例、五轮审阅标准和可独立运行的 CLI。共享脚本修改后运行 `node scripts/sync-publishing-skills.mjs` 同步两套技能包。对照、修订与实际验证见 [0.10 迭代记录](docs/publishing-v010-review.md)。
+
+### 0.10.1：使用成熟主题原生样式
+
+Slides 默认采用 [Metropolis](https://ctan.org/pkg/beamertheme-metropolis)，保留主题原生字体、标题页、配色和间距，不再手动设置 22/16/12/10 pt。其他内置 Beamer 主题也保留原样。旧项目在聊天中输入 `风格：metropolis` 切换；仅输入 `重新排版` 时保留原先选择的主题。自动排版优先拆页，不通过改字号填满页面。Poster 的单页测量、完整署名和版本保护继续保留。
+
+服务器需要 TeX Live 包 `beamertheme-metropolis`、`fira`、`pgfopts`（例如 `tlmgr install beamertheme-metropolis fira pgfopts`）。Linux 上还需让 fontconfig 能发现 Fira 的 OpenType 字体（安装到用户字体目录后运行 `fc-cache -f`）。使用 XeLaTeX 支持中文；缺少主题时会保留项目并报告编译错误，不静默换用其他样式。
+
+原生主题集成与验证记录：[0.10.1 review](docs/publishing-v0101-native-theme.md)。

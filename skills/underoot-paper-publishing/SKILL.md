@@ -11,7 +11,7 @@ For a research talk use [underoot-paper-slides](../underoot-paper-slides/SKILL.m
 
 In underoot the generation menu is now one action: choose Slides or Poster and the host prepares an internal source-linked outline, generates and checks the artifact. Do not require a separate content-confirmation workbench. Follow up through chat beside the PDF, including page-based changes, source tables, vector diagrams, identity, style (`风格：minimal`) and undo. The whole-paper model budget is disclosed; local drafting remains available when AI is not configured. Preserve original projects and unrelated manual edits. Read the appropriate mode's inspected conference examples before reviewing a finished result.
 
-Built-in choices: Slides `academic`, `minimal`, `contrast`, `sidebar`, `conference`, `clean`, `classic-talk`, `large-title`, in 16:9 or 4:3. Posters `classic`, `modern`, `compact`, `bold`, `gallery`, `editorial`, `dark`, `blueprint`, A0 portrait/landscape, 2/3 columns. PDF-imported personal templates provide approximate visual style, not recovered TeX or permission to copy logos. Check contrast and hierarchy after applying a style.
+Built-in choices: Slides `metropolis` (native default), `academic`, `minimal`, `contrast`, `sidebar`, `conference`, `clean`, `classic-talk`, `large-title`, in 16:9 or 4:3. Posters `classic`, `modern`, `compact`, `bold`, `gallery`, `editorial`, `dark`, `blueprint`, A0 portrait/landscape, 2/3 columns. PDF-imported personal templates provide approximate visual style, not recovered TeX or permission to copy logos. Check contrast and hierarchy after applying a style.
 
 ## Inventory and long papers
 

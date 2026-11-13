@@ -1,6 +1,7 @@
 import {renderEditorial}from'./render-editorial.mjs';
 export const publishingStyles = {
  slides: [
+  {id:'metropolis',name:'Metropolis 原生',description:'成熟的现代 Beamer 主题，保留原生字体、配色、标题页与间距',accent:'#23373b',theme:'metropolis'},
   { id: 'academic', name: '学术报告', description: 'Madrid 导航与蓝色标题，适合会议与组会', accent: '#234e78', theme: 'Madrid' },
   { id: 'minimal', name: '极简研究', description: '留白、绿色标题，适合方法讲解与答辩', accent: '#176653', theme: 'default' },
   { id: 'contrast', name: '重点聚焦', description: '深紫标题与高对比结构，突出发现与结论', accent: '#583477', theme: 'CambridgeUS' },

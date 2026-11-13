@@ -11,7 +11,7 @@ Before choosing a composition, read [the inspected conference examples](referenc
 
 Build a claim-to-evidence inventory across the complete source: main architecture/method diagram, primary comparison tables, quantitative plots, ablations and limitations. Prefer original core visuals over decorative images. Each selected visual must have an appropriate local claim and condition, not merely share a large transport chunk. Select explicit source paths/table IDs when composing. Keep skipped evidence and reasons in the private notes. Repeat identifier columns when splitting wide tables; preserve values, baselines, units and uncertainty.
 
-Use one idea and usually 1–3 short points per slide. Keep one deck-wide body size (default 16 pt; a bounded deck-wide 14–16 pt fallback), one title tier (22 pt), one caption tier (10 pt), and one table/diagram tier (12 pt). A small font inside an original raster image is not a substitute for legibility: crop source panels or split the page. Do not enlarge sparse pages to fill them. Whitespace is intentional. Prefer splitting content to shrinking the deck.
+Use one idea and usually 1–3 short points per slide. Prefer a mature theme's native typography, colors, spacing, lists and title page; underoot defaults to Metropolis. Do not override point sizes for titles, body, author, captions or tables. Use semantic roles such as the theme's caption font and `\small` for dense tables/diagrams. Keep the same roles throughout the deck. Split overloaded pages instead of changing font sizes. Whitespace is intentional. Inspect actual chart labels for legibility, since a theme cannot repair tiny labels inside a source image.
 
 Aim for an appropriate original image/table on each substantive page. For a method with no usable source figure, use a 2–4-node editable TikZ diagram only when its steps and arrows are supported by the source. Do not fabricate architecture, numbers or plots to meet a visual quota. If no truthful visual is available, keep a concise text page and report that limitation.
 
@@ -26,7 +26,7 @@ Perform five distinct reviews, recording an observed problem, revision and resul
 Standalone, from this skill directory:
 
 ```bash
-node scripts/generate.mjs --root <paper> --main main.tex --style minimal --out <new-directory> --outline <reviewed-outline.json> --compile --audit --render
+node scripts/generate.mjs --root <paper> --main main.tex --style metropolis --out <new-directory> --outline <reviewed-outline.json> --compile --audit --render
 ```
 
 `--outline` is optional; without it the builder is explicitly a local structured draft. The package includes its own copy of the shared source-safe planner, table parser, renderer and audit scripts. Source notes contain private manuscript text: do not publish them. In-app chat edits only the requested block, retains unrelated TeX, uses bounded source context and supports undo through retained history; do not regenerate the whole project to revise one slide.
