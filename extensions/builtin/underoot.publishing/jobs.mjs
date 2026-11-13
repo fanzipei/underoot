@@ -31,7 +31,8 @@ export function startPublishing(project, userId, body) {
   const timer=setTimeout(()=>job.controller.abort('timeout'),20*60*1000); timer.unref();
   try {
    const runtime={signal:job.controller.signal,progress:(progress)=>{job.progress={...job.progress,...progress};job.updatedAt=Date.now();}};
-   job.result=draft?await (body.phase==='reflow'?reflowSession:generateSession)(project,userId,body.draftId,body,runtime):body.phase==='outline'?await prepareSession(project,userId,body,runtime):await deriveProject(project,userId,body,runtime);
+   if(!draft&&body.phase==='instant'){const prepared=await prepareSession(project,userId,body,runtime);job.draftId=prepared.draft.id;job.result=await generateSession(project,userId,prepared.draft.id,{confirmed:true,version:prepared.draft.version},runtime);}
+   else job.result=draft?await (body.phase==='reflow'?reflowSession:generateSession)(project,userId,body.draftId,body,runtime):body.phase==='outline'?await prepareSession(project,userId,body,runtime):await deriveProject(project,userId,body,runtime);
    job.status='complete'; job.progress={...job.progress,message:body.phase==='outline'?'提纲已保存，请编辑并确认':body.phase==='reflow'?'已完成当前项目重排，历史版本保留':'已生成独立项目，原稿保留'};
   }catch(error){job.status=job.controller.signal.aborted?'cancelled':'failed';job.error=job.controller.signal.reason==='timeout'?'生成超过 20 分钟，已停止；原稿保留':job.controller.signal.aborted?'已取消生成，原稿保留':error.message;}
   finally{clearTimeout(timer);job.updatedAt=Date.now();}

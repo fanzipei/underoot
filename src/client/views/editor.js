@@ -439,7 +439,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     getPdfSelection: () => research.getPdfSelection(),
   };
   const extensionActions = { 'assistant.open': () => research.open(), 'discovery.search': openWorkspaceSearch,
-    'publishing.slides': () => research.openDerive('slides'), 'publishing.poster': () => research.openDerive('poster'),
+    'publishing.slides': () => research.openDerive('slides'), 'publishing.poster': () => research.openDerive('poster'), 'publishing.chat':()=>research.openDerive('chat'),
     'publishing.template': () => research.openTemplate(),'publishing.templates':()=>openTemplateLibrary(), 'editing.vim':()=>setVim(!vimEnabled) };
   const vimButton=root.querySelector('#vim-toggle');const vimKey=`underoot.vim.${user.id}`;
   async function setVim(value){

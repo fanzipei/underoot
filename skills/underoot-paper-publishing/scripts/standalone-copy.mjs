@@ -26,4 +26,6 @@ export function standalonePage(page){
  const clean={...page,...(page.text!==undefined?{text:standaloneText(page.text)}:{}),title:standaloneText(page.title)||'Research evidence',takeaway:standaloneText(page.takeaway),bullets:(page.bullets||[]).map(standaloneText).filter(Boolean),figures:(page.figures||[]).map(v=>({...v,caption:standaloneText(v.caption)})),tables:(page.tables||[]).map(v=>({...v,caption:standaloneText(v.caption)}))};
  return clean;
 }
-export function standaloneEditorial(story){return{...story,pages:story.pages.map(standalonePage)};}
+export function standaloneEditorial(story,chunks=[]){return{...story,pages:story.pages.map(p=>standalonePage({...p,title:withoutSourceCitations(p.title,chunks),takeaway:withoutSourceCitations(p.takeaway,chunks),bullets:(p.bullets||[]).map(v=>withoutSourceCitations(v,chunks)),figures:(p.figures||[]).map(v=>({...v,caption:withoutSourceCitations(v.caption,chunks)}))}))};}
+
+export function withoutSourceCitations(value,chunks=[]){const keys=new Set(chunks.flatMap(c=>[...String(c.text||'').matchAll(/\\cite[a-zA-Z]*\s*\{([^}]+)\}/g)].flatMap(m=>m[1].split(',').map(k=>k.trim()))));return String(value||'').replace(/\[([^\]]+)\]/g,(all,inside)=>inside.split(',').every(k=>keys.has(k.trim()))?'':all).replace(/~(?=\s|[.,;:!?]|$)/g,' ').replace(/\s+([,.;:!?])/g,'$1').replace(/([,;:])(?:\s*[,;:])+/g,'$1');}

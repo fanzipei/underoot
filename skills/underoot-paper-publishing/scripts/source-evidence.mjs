@@ -1,4 +1,6 @@
+import{portableTable}from'./portable-table.mjs';
 import {plainText}from'./chunk-paper.mjs';
+const captionText=v=>plainText(v.replace(/\\pm\b/g,' ± ').replace(/\\downarrow\b/g,' ↓ ').replace(/\\uparrow\b/g,' ↑ ').replace(/\$([^$]*)\$/g,(whole,math)=>/\\(?:frac|sum|prod|int)\b/.test(math)?whole:math)).replace(/_\s*(?=±)/g,' ');
 /** Balanced argument reader for captions/metadata; never executes TeX. */
 export function argument(text,command,start=0){
  const pattern=new RegExp('\\\\'+command+'(?:\\[[^\\]]*\\])?\\s*\\{','g');pattern.lastIndex=start;const match=pattern.exec(text);if(!match)return null;
@@ -10,7 +12,7 @@ export function sourceEvidence(source,chunks,figures=[]){
  const ids=(from,to)=>chunks.filter(c=>c.from<to&&c.to>from).map(c=>c.id);
  const visuals=[];
  for(const match of source.matchAll(/\\begin\{figure\*?\}(?:\[[^\]]*\])?[\s\S]*?\\end\{figure\*?\}/g)){
-  const caption=plainText(argument(match[0],'caption')?.value||'');const label=argument(match[0],'label')?.value||'';
+  const caption=captionText(argument(match[0],'caption')?.value||'');const label=argument(match[0],'label')?.value||'';
   for(const image of match[0].matchAll(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g)){
    const request=image[1].replace(/^\.\//,'');const exact=figures.find(f=>f===request||f.replace(/\.[^.]+$/,'')===request||f.endsWith('/'+request));
    const basename=figures.filter(f=>f.split('/').pop().replace(/\.[^.]+$/,'')===request.split('/').pop().replace(/\.[^.]+$/,''));const found=exact||(basename.length===1?basename[0]:null);
@@ -31,16 +33,15 @@ export function sourceEvidence(source,chunks,figures=[]){
   const value=(match[1]||match[2]).replace(/\\label\{[^}]*\}/g,'').trim();const commands=[...value.matchAll(/\\([A-Za-z@]+)/g)].map(m=>m[1]);
   if(value.length<=320&&commands.every(c=>allowed.has(c))&&!/[#%]/.test(value)&&!value.includes('\\\\'))equations.push({tex:value,sourceIds:ids(match.index,match.index+match[0].length)});
  }
- const tables=[];
+ const tables=[];let portableCount=0;
  for(const match of source.matchAll(/\\begin\{table\*?\}(?:\[[^\]]*\])?[\s\S]*?\\end\{table\*?\}/g)){
-  const body=match[0].match(/\\begin\{tabular\}\{[^}\n]+\}([\s\S]*?)\\end\{tabular\}/)?.[1];
-  if(!body||/\\(?:multirow|multicolumn|begin|end)\b/.test(body))continue;
-  const cell=(value)=>plainText(value.replace(/\$([^$]*)\$/g,(whole,math)=>/^(?:[\d. +\-{}()eE]|\\(?:pm|%|mathbf|mathrm|textbf))*$/.test(math)?math.replace(/\\pm\b/g,' ± '):whole));
-  const rows=body.replace(/\\(?:toprule|midrule|bottomrule|hline)\b/g,'').split(/\\\\(?:\[[^\]]*\])?/).map(row=>row.trim()).filter(Boolean).map(row=>row.split(/(?<!\\)&/).map(cell));
-  if(rows.length<2||rows.length>8||rows[0].length<2||rows[0].length>4||rows.some(row=>row.length!==rows[0].length||row.some(cell=>cell.length>100||cell.includes('[公式见原稿]'))))continue;
-  tables.push({id:'table-'+(tables.length+1),caption:plainText(argument(match[0],'caption')?.value||''),headers:rows[0],rows:rows.slice(1),sourceIds:ids(match.index,match.index+match[0].length)});
+  const parsed=portableTable(match[0],source);if(!parsed)continue;portableCount++;
+  const caption=captionText(argument(match[0],'caption')?.value||'');const same=tables.find(t=>JSON.stringify([t.caption,t.headers,t.rows])===JSON.stringify([caption,parsed.headers,parsed.rows]));if(same)same.sourceIds=[...new Set([...same.sourceIds,...ids(match.index,match.index+match[0].length)])];else tables.push({id:'table-'+(tables.length+1),caption,...parsed,sourceIds:ids(match.index,match.index+match[0].length)});
  }
- const skippedTables=[...source.matchAll(/\\begin\{(?:tabular\*?|tabularx|longtable|tabulary)\}/g)].length-tables.length;
+ // Expand only explicitly defined dataset abbreviations, never guess a legend.
+ const definitions=new Map(),ambiguous=new Set();for(const t of tables)for(const m of t.caption.matchAll(/((?:[A-Z]{2,5}(?:,|\s|and)+){1,7}[A-Z]{2,5})\s+(?:denote|refer to|stand for)\s+(.+?),\s*respectively\./g)){const codes=m[1].match(/\b[A-Z]{2,5}\b/g)||[],names=m[2].split(/,\s*(?:and\s+)?/);if(codes.length!==names.length)continue;codes.forEach((c,i)=>{if(definitions.has(c)&&definitions.get(c)!==names[i])ambiguous.add(c);definitions.set(c,names[i]);});}
+ for(const t of tables){const expand=v=>String(v).replace(/\b[A-Z]{2,5}\b/g,c=>definitions.has(c)&&!ambiguous.has(c)?definitions.get(c):c);if(/matched|transfer|region|phase|event/i.test(t.caption))t.headers=t.headers.map(expand);t.rows=t.rows.map(row=>row.map((v,i)=>i===0&&/[→↔←]/.test(v)?expand(v):v));}
+ const skippedTables=[...source.matchAll(/\\begin\{(?:tabular\*?|tabularx|longtable|tabulary)\}/g)].length-portableCount;
  const omittedEquations=equationCount-Math.min(24,equations.length)+[...source.matchAll(/\\begin\{(?:align|gather|multline|eqnarray)\*?\}/g)].length;
  return{visuals,tables,equations:equations.slice(0,24),evidenceWarnings:[...figures.filter(f=>!visuals.some(v=>v.path===f)).map(f=>'插图路径存在歧义，未自动放置：'+f),...(skippedTables>0?[`${skippedTables} 个复杂表格未自动移植；请根据原稿表头、数值和单位重新组织，或保留来源引用。`]:[]),...(omittedEquations>0?[`${omittedEquations} 个公式未直接移植（自定义宏、过长或展示数量限制）；请对照保留的原稿适配。`]:[])]};
 }

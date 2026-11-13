@@ -20,8 +20,8 @@ check('height-based partition preserves every block and order',columns.flat().jo
 const editorial={pages:[{id:'a',layout:'split',figures:[],bullets:['A']},{id:'b',layout:'split',figures:[],bullets:['B']}],columns:[],rounds:[]};
 let written,calls=0;
 const result=await fitPublication({editorial},{kind:'slides'},{maxRounds:2,render:info=>JSON.stringify(info.editorial),write:content=>written=JSON.parse(content),audit:async()=>{calls++;const bad=written.pages.some(p=>p.slideFont);return{status:bad?'needs-review':'passed',issues:bad?['overflow']:[],errors:[],measurements:{slides:{a:{height:bad?150:40,available:100},b:{height:bad?150:40,available:100}}}};}});
-check('failed later trial restores selected TeX and PDF',calls===3&&result.status==='passed'&&!written.pages.some(p=>p.slideFont));
-check('failed trial typography cannot leak into accepted outline',!editorial.pages.some(p=>p.slideFont||p.centered));
+check('sparse slides do not trigger enlargement or extra compilation',calls===1&&result.status==='passed'&&!written.pages.some(p=>p.slideFont)&&written.slideFont===16);
+check('deck typography stays uniform without per-page font changes',!editorial.pages.some(p=>p.slideFont||p.centered));
 const absent=await fitPublication({editorial:structuredClone(editorial)},{kind:'slides'},{render:()=>'',write:()=>{},audit:async()=>({status:'unavailable',issues:[]})});
 check('missing native engine is disclosed without claiming measurements',absent.status==='unavailable'&&absent.iterations.length===1&&!absent.usage);
 const dense={pages:[{id:'a',bullets:[],figures:[]}],columns:[['a']],posterFont:32};adjustLayout(dense,{kind:'poster',columns:1},{blocks:{a:1070},available:1000},{maximum:1.07,minimum:1.07},true);check('dense poster keeps readable 32pt while tightening leading',dense.posterFont===32&&dense.posterLeading===37);
