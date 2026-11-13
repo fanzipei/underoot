@@ -40,7 +40,7 @@ let modelCalls=0;const ai=await summarizePaper(plan,publishingOptions({kind:'sli
  return JSON.stringify({sections:[{title:'Accuracy is 87.1% under the evaluated budget',takeaway:'The first-dataset gain is bounded by the tested conditions.',bullets:['The method reaches 87.1%; the baseline reaches 80.2%.','Results are restricted to the evaluated datasets.'],sourceIds:data.nodes.flatMap(n=>n.ids)}]});
 }});
 check('AI 支持主张句与结构化要点，不强制连续段落',ai.sections[0].bullets.length===2&&ai.sections[0].text.includes('87.1'));
-check('五步预检不偷偷增加模型调用',modelCalls===plan.modelCalls);
+check('五步预检不偷偷增加模型调用',modelCalls<=plan.modelCalls);
 const bad=structuredClone(ai);bad.sections[0].bullets.push('Unreported accuracy is 999.9%.');const review=editorialPlan(plan,bad,publishingOptions({kind:'slides'}));
 check('无源码原值的模型数字列入待核验项',review.warnings.some(w=>w.includes('999.9')));
 console.log(`Publishing editorial: ${count}/${count} passed`);

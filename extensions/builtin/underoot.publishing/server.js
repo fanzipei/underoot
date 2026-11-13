@@ -1,3 +1,4 @@
+import{summaryCache}from'./summary-cache.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -73,8 +74,8 @@ export async function deriveProject(project, userId, body, runtime = {}) {
   if (body.planDigest && body.planDigest !== plan.digest) throw failure(409, '论文或插图已变化，请重新查看分块计划和确认风格');
   if (body.useAI && body.maxModelCalls !== plan.modelCalls) throw failure(400, '请先查看分块计划并确认模型调用次数');
   const summary = runtime.approved?.summary || await summarizePaper(plan, options, { useAI: !!body.useAI,
-   model: (instruction,input) => callModel(instruction,input,[],{ timeout:60000,signal:runtime.signal }),
-   progress: runtime.progress, check });
+   model: (instruction,input) => callModel(instruction,input,[],{ timeout:120000,signal:runtime.signal }),
+   progress: runtime.progress, check,cache:body.useAI?summaryCache(project,userId,plan):null });
   check(); runtime.progress?.({ phase:'render', message:'正在应用确认的风格并保存独立项目', modelCalls:summary.modelCalls });
   const editorial=runtime.approved?.editorial || editorialPlan(plan,summary,options);
   if(options.kind==='poster')editorial.posterFont=posterFontFor(editorial,options,options.customTemplate||publishingStyles.poster.find(s=>s.id===options.style));
@@ -85,6 +86,7 @@ export async function deriveProject(project, userId, body, runtime = {}) {
   if (fs.existsSync(resolveInside(dir,entry))) entry = `${options.kind}-${id.slice(0,8)}.tex`;
   const layout=await fitPublication({...plan,sections:summary.sections,editorial},options,{render:renderPublication,write:content=>fs.writeFileSync(resolveInside(dir,entry),content,'utf8'),audit:()=>auditDraft(id,entry,options,{check,progress:runtime.progress}),check,progress:runtime.progress});
   if(layout.status==='needs-review'&&((layout.errors||[]).length||layout.outsideText||(layout.overflowWarnings||[]).some(w=>w.points>1)||(options.kind==='poster'&&layout.pages!==null&&layout.pages!==1)||layout.usage?.maximum>1.01))throw failure(422,'生成结果未通过编译或排版检查，已保留确认的提纲与原稿；请调整内容密度或版式后重试：'+layout.issues.join('；'));
+  runtime.progress?.({phase:'save',message:'编译检查已完成，正在保存生成项目和版本记录'});
   const reportPath = `underoot-publishing/${id}/plan.json`;
   const reportDir = resolveInside(dir,`underoot-publishing/${id}`); fs.mkdirSync(reportDir,{recursive:true});
   const { chunks, ...metadata } = plan;

@@ -7,7 +7,7 @@ import { requireAuth, requireAdmin } from './auth.js';
 import { sourceFiles, failure, snapshot, history, revision, revisionDiff, createBranch, checkout, mergePreview, mergeBranch } from './project-history.js';
 import { aiConfig, saveAiConfig, testAi, review, reviewPlan, suggestions, decideSuggestion, literature } from './assistant.js';
 import { deriveProject, retarget, publishingPlan } from './derive.js';
-import { startPublishing, publishingJob } from '../extensions/builtin/underoot.publishing/jobs.mjs';
+import { startPublishing, publishingJob, activePublishingJobs } from '../extensions/builtin/underoot.publishing/jobs.mjs';
 import {listSessions,getSession,saveSession,proposeSession,decideSession,uploadBrandAsset} from '../extensions/builtin/underoot.publishing/sessions.mjs';
 import { editReply } from './discussions.js';
 import { flushProject } from './collab.js';
@@ -105,6 +105,7 @@ workspaceRouter.post(`${prefix}/derive/drafts/:draft/logo`,requireExtension('und
 workspaceRouter.post(`${prefix}/derive/drafts/:draft/chat`,requireExtension('underoot.publishing'),editor,handle(async(req,res)=>res.json(await proposeSession(req.project,req.user.id,req.params.draft,req.body||{}))));
 workspaceRouter.post(`${prefix}/derive/drafts/:draft/decide`,requireExtension('underoot.publishing'),editor,handle((req,res)=>res.json(decideSession(req.project,req.user.id,req.params.draft,req.body||{}))));
 workspaceRouter.post(`${prefix}/derive/jobs`, requireExtension('underoot.publishing'), editor, handle((req,res)=>res.status(202).json(startPublishing(req.project,req.user.id,req.body||{}))));
+workspaceRouter.get(`${prefix}/derive/jobs`, editor, handle((req,res)=>res.json(activePublishingJobs(req.project.id,req.user.id))));
 workspaceRouter.get(`${prefix}/derive/jobs/:job`, editor, handle((req,res)=>res.json(publishingJob(req.project.id,req.user.id,req.params.job))));
 workspaceRouter.post(`${prefix}/derive/jobs/:job/cancel`, editor, handle((req,res)=>res.json(publishingJob(req.project.id,req.user.id,req.params.job,true))));
 workspaceRouter.post(`${prefix}/template`, requireExtension('underoot.publishing'), editor, (req, res, next) => upload.single('file')(req, res, (error) => error ? next(failure(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400, '模板 ZIP 需小于 30 MB')) : next()),

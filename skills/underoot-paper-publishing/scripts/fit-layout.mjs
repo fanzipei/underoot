@@ -49,7 +49,7 @@ export async function fitPublication(info,options,{render,write,audit,check=()=>
  if(options.kind==='poster')story.posterFont=posterFontFor(story,options,options.customTemplate||{});
  const limit=Math.max(1,Math.min(8,Math.floor(maxRounds))),trials=options.kind==='poster'?Math.max(1,limit-2):limit;
  for(let round=1;round<=trials;round++){
-  check();progress({phase:'layout',message:`自动排版 ${round}/${trials}：编译并测量实际内容高度`});
+  check();progress({phase:'layout',layoutRound:round,totalRounds:trials,message:`自动排版 ${round}/${trials}：编译并测量实际内容高度`});
   const content=render({...info,editorial:story},options);lastContent=content;write(content);const result=await audit();check();
   const usage=layoutUsage(story,options,result.measurements||{});
   const valid=result.status==='passed'&&(!usage||usage.maximum<=1.01);

@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-export const CHUNK_CHARS = 16000;
+export const CHUNK_CHARS = 20000;
 export const MAX_PAPER_CHARS = 4000000;
 export const hash = (text) => crypto.createHash('sha256').update(text).digest('hex');
 const fail = (message) => { throw Object.assign(new Error(message), { status: 413 }); };
@@ -79,14 +79,21 @@ export function splitPaper(source, max = CHUNK_CHARS) {
    from = to;
   }
  }
- return chunks;
+ // Keep a parent section and its small subsections together when they fit.
+ // Transport remains lossless; primary section/chapter boundaries stay intact.
+ const packed=[];
+ for(const chunk of chunks){const previous=packed.at(-1),major=/^\\(?:chapter|section)\b/.test(chunk.text);
+  if(previous&&!major&&!previous.continuation&&!chunk.continuation&&previous.chars+chunk.chars<=max){previous.text+=chunk.text;previous.to=chunk.to;previous.chars=previous.text.length;previous.headings.push({title:chunk.title,from:chunk.from,section:chunk.section});}
+  else packed.push({...chunk,headings:[{title:chunk.title,from:chunk.from,section:chunk.section}]});
+ }
+ return packed.map((chunk,i)=>({...chunk,id:`c${String(i+1).padStart(4,'0')}`}));
 }
 export function paperPlan(source, extra = {}) {
  const chunks = splitPaper(source);
  let groups = chunks.length; let reductionCalls = 0;
- while (groups > 8) { groups = Math.ceil(groups/8); reductionCalls += groups; }
- return { version: 1, digest: hash(source), chars: source.length, chunkChars: CHUNK_CHARS, chunkCount: chunks.length,
-  sectionCount: new Set(chunks.map((c) => c.section)).size, modelCalls: chunks.length + reductionCalls + 1,
+ while (groups > 1) { groups = Math.ceil(groups/2); reductionCalls += groups; }
+ return { version: 2, digest: hash(source), chars: source.length, chunkChars: CHUNK_CHARS, chunkCount: chunks.length,
+  sectionCount: new Set(chunks.flatMap(c=>c.headings.map(h=>h.section))).size, baseModelCalls:chunks.length+reductionCalls+1,repairModelCalls:3,modelCalls: chunks.length + reductionCalls + 1 + 3,
   ...extra, chunks };
 }
 export function extractSummary(text, limit = 1100, alreadyPlain = false) {

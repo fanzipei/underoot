@@ -1,5 +1,6 @@
 import{summarizePaper}from'../skills/underoot-paper-publishing/scripts/summarize.mjs';
 import{assetFindings,assetInsight,enrichEvidencePages}from'../skills/underoot-paper-publishing/scripts/asset-findings.mjs';
+import{paperPlan,splitPaper}from'../skills/underoot-paper-publishing/scripts/chunk-paper.mjs';
 import assert from'node:assert/strict';import{portableTable,tablePanels,posterResultTable,presentationTables}from'../skills/underoot-paper-publishing/scripts/portable-table.mjs';import{validateDiagram,renderDiagram}from'../skills/underoot-paper-publishing/scripts/vector-diagram.mjs';import{editorialPlan}from'../skills/underoot-paper-publishing/scripts/editorial-plan.mjs';import{renderPublication}from'../skills/underoot-paper-publishing/scripts/styles.mjs';
 let count=0;const check=(n,v)=>{assert.ok(v,n);count++;console.log('✓',n);};
 const parsed=portableTable(String.raw`\begin{table}\begin{tabular}{@{}lrrrrr@{}}\toprule Method & \multicolumn{2}{c}{Tokyo} & \multicolumn{3}{c}{Osaka} \\ \cmidrule(lr){2-3} & $\mathrm{MAE}\downarrow$ & RMSE & MAE & RMSE & Time \\ Baseline & $80.2\pm0.3$ & 4 & 5 & 6 & 7 \\ Ours & 87.1 & 3 & 4 & 5 & 6 \\ \bottomrule\end{tabular}\end{table}`);
@@ -46,4 +47,16 @@ const insightPlan={...repeated,visuals:[{path:'specific.png',sourceIds:['c0001']
 const specific=await summarizePaper(insightPlan,{kind:'slides',count:2},{useAI:true,model:insightModel('c0001')});
 check('AI asset insight reuses the narrative call and retains source provenance',specific.assetInsights[0].sourceIds[0]==='c0001'&&specific.modelCalls===2);
 await assert.rejects(summarizePaper(insightPlan,{kind:'slides',count:2},{useAI:true,model:insightModel('c0002')}),{status:502});check('AI conclusion cannot cite an unrelated asset source',true);
+const adjacent=String.raw`\section{Method}A complete method paragraph.\subsection{Selection}A complete selection paragraph.\subsection{Evaluation}A complete evaluation paragraph.\section{Results}Independent measured results.`;
+const merged=splitPaper(adjacent);check('subsections stay with their parent without changing source bytes',merged.length===2&&merged[0].headings.length===3&&merged.map(c=>c.text).join('')===adjacent);
+const tolerantPlan=paperPlan(String.raw`\section{Method}An original finding with its scope.`);let tolerantCalls=0,repairInput,repairProgress=[];
+const tolerant=await summarizePaper(tolerantPlan,{kind:'slides',count:2},{useAI:true,model:async(_prompt,input)=>{tolerantCalls++;return JSON.stringify(input.nodes?{sections:[{title:'Finding',text:'Original finding with its scope.',sourceIds:input.nodes.flatMap(n=>n.ids)}]}:{summary:'x'.repeat(2500)});}});
+check('1800 is guidance and 2500-character summaries are accepted intact',tolerant.notes[0].summary.length===2500&&tolerantCalls===2);
+let repairCalls=0;const repaired=await summarizePaper(tolerantPlan,{kind:'slides',count:2},{useAI:true,progress:p=>repairProgress.push(p),model:async(_prompt,input)=>{repairCalls++;if(input.repair)repairInput=input;return input.nodes?JSON.stringify({sections:[{title:'Finding',text:'Original finding with its scope.',sourceIds:input.nodes.flatMap(n=>n.ids)}]}):repairCalls===1?JSON.stringify({summary:'x'.repeat(3001)}):JSON.stringify({summary:'Corrected finding with the original scope.'});}});
+check('oversized response is repaired using feedback and complete original input',repairCalls===3&&repairInput.text===tolerantPlan.chunks[0].text&&repairInput.repair.feedback.includes('3001')&&repaired.notes[0].summary.startsWith('Corrected'));
+check('repair is visible and stays within the declared model budget',repairProgress.some(p=>p.repairAttempt===1)&&repaired.modelCalls<=tolerantPlan.modelCalls);
+let rejectedCalls=0;await assert.rejects(summarizePaper(tolerantPlan,{kind:'slides',count:2},{useAI:true,model:async()=>{rejectedCalls++;return 'invalid JSON';}}),{status:502});check('repeated invalid responses have bounded repair attempts',rejectedCalls===3);
+const longNotesPlan=paperPlan(Array.from({length:9},(_,i)=>`\\section{Topic ${i}}Original evidence ${i}.`).join('\n'));let largestPayload=0;
+const longNotes=await summarizePaper(longNotesPlan,{kind:'slides',count:2},{useAI:true,model:async(_prompt,input)=>{largestPayload=Math.max(largestPayload,JSON.stringify(input).length);return JSON.stringify(input.nodes?{sections:[{title:'Findings',text:'Evidence remains source-linked.',sourceIds:input.nodes.flatMap(n=>n.ids)}]}:{summary:'x'.repeat(2990)});}});
+check('long accepted notes are batched without an oversized final request',largestPayload<24000&&new Set(longNotes.sections.flatMap(s=>s.sourceIds)).size===longNotesPlan.chunkCount&&longNotes.modelCalls<=longNotesPlan.modelCalls);
 console.log(`Publishing evidence: ${count}/${count} passed`);

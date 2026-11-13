@@ -42,7 +42,7 @@ const model=async(_instruction,input)=>{
  return JSON.stringify({summary:input.text?`Chunk ${input.id}: ${input.text.slice(-100)}`:'Combined evidence and limitations.'});
 };
 const ai=await summarizePaper(plan,options,{useAI:true,model});
-check('AI 分层调用次数与预览一致',calls===plan.modelCalls&&ai.modelCalls===calls);
+check('AI 实际调用次数不超过确认上限',calls<=plan.modelCalls&&ai.modelCalls===calls);
 check('每次模型输入有界',largest<24000);
 check('AI 最终叙事覆盖全部分块',new Set(ai.sections.flatMap((s)=>s.sourceIds)).size===plan.chunkCount);
 await assert.rejects(summarizePaper(plan,options,{useAI:true,model:async(_i,input)=>input.nodes?JSON.stringify({sections:[{title:'Missing',text:'Missing chunks',sourceIds:['c0001']}]}):JSON.stringify({summary:'Evidence'})}),{status:502});check('模型遗漏分块时停止生成',true);

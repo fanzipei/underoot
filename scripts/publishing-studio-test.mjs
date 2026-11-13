@@ -8,13 +8,13 @@ import {renderEditorial as legacyRender}from'../skills/underoot-paper-publishing
 import {renderEditorial as v3Render}from'../skills/underoot-paper-publishing/scripts/render-editorial-v3.mjs';
 import {renderEditorial as v5Render}from'../skills/underoot-paper-publishing/scripts/render-editorial-v5.mjs';
 import {publishingStyles}from'../extensions/builtin/underoot.publishing/styles.mjs';
-const BASE=process.env.BASE_URL;let checks=0,calls=0,lastInput,malformed=false,flowReply=false;
+const BASE=process.env.BASE_URL;let checks=0,calls=0,lastInput,malformed=false,flowReply=false,badSummary=false,holdSummary=false;
 const check=(name,value)=>{assert.ok(value,name);checks++;console.log('✓',name);};
 async function req(url,cookie='',method='GET',body){const r=await fetch(BASE+url,{method,headers:{cookie,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:r.status,data:await r.json().catch(()=>({})),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
 const owner=(await req('/api/auth/login','','POST',{email:'demo@latex.studio',password:'demo1234'})).cookie;
 const admin=(await req('/api/auth/login','','POST',{email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_PASSWORD})).cookie;
-const mock=http.createServer(async(r,res)=>{let raw='';for await(const b of r)raw+=b;const request=JSON.parse(raw);calls++;const input=JSON.parse(request.messages[1].content);lastInput=input;
- const content=input.request?malformed?{page:{title:'unsafe',takeaway:'x',bullets:[],layout:'visual',figurePath:'../../secret'}}:{explanation:'Shortened the chosen block while retaining its experimental condition.',page:{title:'Measured result under stated conditions',takeaway:'Result 94 under the stated sample.',bullets:['Baseline 91; sample remains restricted.','Please verify uncertainty in source.','Figure~[fig:framework] summarizes SCaDiff.'],layout:'comparison',figurePath:'',...(flowReply?{diagram:{nodes:[{id:'input',label:'Source observations'},{id:'estimate',label:'Evaluated prediction'}],edges:[{from:'input',to:'estimate'}]}}:{})}}:input.nodes?{sections:input.nodes.map((n,i)=>({title:['Research question','Method','Results','Limitations'][i%4],takeaway:n.summary.slice(0,130),bullets:[n.summary.slice(0,160),'Figure~[fig:framework] summarizes SCaDiff.'],sourceIds:n.ids}))}:{summary:input.text?'Result 94 with baseline 91; the restricted sample limits generalization.':'Restricted findings.'};
+const mock=http.createServer(async(r,res)=>{let raw='';for await(const b of r)raw+=b;const request=JSON.parse(raw);calls++;const input=JSON.parse(request.messages[1].content);lastInput=input;if(holdSummary&&!input.nodes&&!input.request)await new Promise(r=>setTimeout(r,3800));
+ const content=input.request?malformed?{page:{title:'unsafe',takeaway:'x',bullets:[],layout:'visual',figurePath:'../../secret'}}:{explanation:'Shortened the chosen block while retaining its experimental condition.',page:{title:'Measured result under stated conditions',takeaway:'Result 94 under the stated sample.',bullets:['Baseline 91; sample remains restricted.','Please verify uncertainty in source.','Figure~[fig:framework] summarizes SCaDiff.'],layout:'comparison',figurePath:'',...(flowReply?{diagram:{nodes:[{id:'input',label:'Source observations'},{id:'estimate',label:'Evaluated prediction'}],edges:[{from:'input',to:'estimate'}]}}:{})}}:input.nodes?{sections:input.nodes.map((n,i)=>({title:['Research question','Method','Results','Limitations'][i%4],takeaway:n.summary.slice(0,130),bullets:[n.summary.slice(0,160),'Figure~[fig:framework] summarizes SCaDiff.'],sourceIds:n.ids}))}:{summary:(badSummary===true||badSummary==='after-first'&&input.heading==='Bad response')?'x'.repeat(3001):input.text?'Result 94 with baseline 91; the restricted sample limits generalization.':'Restricted findings.'};
  res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(content)}}]}));});
 mock.listen(0,'127.0.0.1');await once(mock,'listening');
 try{
@@ -35,7 +35,7 @@ try{
  const job=await wait(start.data.id);if(job.status!=='complete')console.error(job);
  let draft=job.result?.draft;check(kind+' AI creates editable outline before project',draft?.pages.length>0&&!draft.projectId&&await projectCount()===before);
  check(kind+' table evidence retains a brief source-grounded conclusion',draft.pages.some(p=>p.tables?.length&&(kind==='poster'||(!p.bullets.length&&p.takeaway.includes('same restricted sample')))));
- check(kind+' whole-paper AI called only at outline stage',calls-beforeCalls===plan.modelCalls);
+ check(kind+' whole-paper AI called only at outline stage',calls-beforeCalls<=plan.modelCalls);
  const url=base+'/drafts/'+draft.id;
  check(kind+' title block authors populate without manual input',draft.identity.authors.includes('Source Alice')&&draft.identity.authors.includes('Source Bob')&&draft.identity.affiliations.includes('Source Lab'));
  check(kind+' AI outline strips original paper figure navigation',!JSON.stringify(draft.pages).includes('summarizes SCaDiff'));
@@ -110,7 +110,7 @@ try{
  await req(file,owner,'PUT',{content:edited+'\n% concurrent collaborator edit'});
  check(kind+' concurrent TeX editing prevents overwrite',(await req(dest+'/decide',owner,'POST',{version:draft.version,proposalId:draft.proposal.id,accept:true})).status===409);
  check(kind+' concurrent edit remains',(await req(file,owner)).data.content.endsWith('% concurrent collaborator edit'));
- malformed=true;check(kind+' unknown figure path rejected',(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:chosen,message:'Add figure',consent:true})).status===400);malformed=false,flowReply=false;
+ malformed=true;check(kind+' unknown figure path rejected',(await req(dest+'/chat',owner,'POST',{version:draft.version,pageId:chosen,message:'Add figure',consent:true})).status===400);malformed=false,flowReply=false,badSummary=false,holdSummary=false;
  await req(`/api/projects/${derived}/members`,owner,'POST',{email:process.env.ADMIN_EMAIL,role:'viewer'});
  check(kind+' viewer cannot see private review session',(await req(dest,admin)).status===403);
  check(kind+' viewer cannot apply proposal',(await req(dest+'/decide',admin,'POST',{version:draft.version,proposalId:draft.proposal.id,accept:true})).status===403);
@@ -139,7 +139,7 @@ try{
  let finished;for(let n=0;n<1800;n++){finished=(await req(quickBase+'/jobs/'+instant.data.id,owner)).data;if(['complete','failed','cancelled'].includes(finished.status))break;await new Promise(r=>setTimeout(r,100));}
  if(finished.status!=='complete')console.error(finished);
  check('one click produces a persistent editable project directly',finished.status==='complete'&&!!finished.result.draft.projectId);
- check('one click keeps the declared whole-paper model budget',calls-quickCalls===quickPlan.modelCalls);
+ check('one click keeps the declared whole-paper model budget',calls-quickCalls<=quickPlan.modelCalls);
  let quickDraft=finished.result.draft;const quickDest=`/api/workspace/projects/${quickDraft.projectId}/derive/drafts/${quickDraft.id}`,quickFile=`/api/projects/${quickDraft.projectId}/file?path=${finished.result.project.mainFile}`,quickOriginal=(await req(quickFile,owner)).data.content;
  flowReply=true;quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'第 2 页改成来源支持的流程图',consent:true})).data;flowReply=false;
  check('chat resolves a PDF page number without a block selector',quickDraft.proposal.pageId===quickDraft.pages[0].id&&!!quickDraft.proposal.page.diagram);
@@ -162,5 +162,26 @@ try{
   check('known overflowing output is not published as completed',failed.status==='failed'&&(await req('/api/projects',owner)).data.projects.length===before);
   check('failed fitting preserves original manuscript and approved outline',(await req(`/api/projects/${project.id}/file?path=main.tex`,owner)).data.content===source&&!(await req(base+'/drafts/'+draft.id,owner)).data.projectId);
  }
+ const stalledProject=(await req('/api/projects',owner,'POST',{name:'Model response progress fixture',template:'blank'})).data.project;
+ await req(`/api/projects/${stalledProject.id}/file?path=main.tex`,owner,'PUT',{content:String.raw`\documentclass{article}\title{Progress Fixture}\begin{document}\section{Results}A source-supported finding under a fixed budget.\end{document}`});
+ const tracking=`/api/workspace/projects/${stalledProject.id}/derive`,trackingPlan=(await req(tracking+'/plan',owner)).data;
+ badSummary=true;holdSummary=true;const beforeFailureCalls=calls;
+ const pending=(await req(tracking+'/jobs',owner,'POST',{phase:'instant',kind:'slides',useAI:true,consent:true,confirmed:true,planDigest:trackingPlan.digest,maxModelCalls:trackingPlan.modelCalls})).data;
+ await new Promise(r=>setTimeout(r,3200));const running=(await req(tracking+'/jobs/'+pending.id,owner)).data;
+ check('model wait has a live heartbeat and actual request count',running.status==='running'&&running.heartbeatAt>running.startedAt&&running.progress.modelCalls===1);
+ check('active job discovery reconnects without another model request',(await req(tracking+'/jobs',owner)).data.jobs.some(j=>j.id===pending.id)&&calls===beforeFailureCalls+1);
+ check('active job listing requires project access',(await req(tracking+'/jobs')).status===401);
+ let failure;for(let n=0;n<180;n++){failure=(await req(tracking+'/jobs/'+pending.id,owner)).data;if(failure.status==='failed')break;await new Promise(r=>setTimeout(r,100));}
+ badSummary=false;holdSummary=false;
+ check('oversized model response is terminal with an actionable size error',failure.status==='failed'&&failure.progress.phase==='failed'&&failure.error.includes('3001')&&!!failure.finishedAt);
+ check('failed job no longer appears active and makes no further API calls',!(await req(tracking+'/jobs',owner)).data.jobs.length&&calls===beforeFailureCalls+3);
+ const resumeProject=(await req('/api/projects',owner,'POST',{name:'Partial summary recovery fixture',template:'blank'})).data.project;
+ await req(`/api/projects/${resumeProject.id}/file?path=main.tex`,owner,'PUT',{content:String.raw`\section{Good source}A preserved first source statement.\section{Bad response}A second original statement under the same scope.`});
+ const resumeBase=`/api/workspace/projects/${resumeProject.id}/derive`,resumePlan=(await req(resumeBase+'/plan',owner)).data,runBody={phase:'instant',kind:'slides',useAI:true,consent:true,confirmed:true,planDigest:resumePlan.digest,maxModelCalls:resumePlan.modelCalls};
+ async function finishResume(id){for(let n=0;n<1800;n++){const j=(await req(resumeBase+'/jobs/'+id,owner)).data;if(['complete','failed','cancelled'].includes(j.status))return j;await new Promise(r=>setTimeout(r,100));}throw Error('Resume timeout');}
+ badSummary='after-first';const firstResume=(await req(resumeBase+'/jobs',owner,'POST',runBody)).data;const partial=await finishResume(firstResume.id);badSummary=false;
+ check('partial reading fails only after bounded model correction',partial.status==='failed');const resumeCalls=calls;
+ const secondResume=(await req(resumeBase+'/jobs',owner,'POST',runBody)).data;const recovered=await finishResume(secondResume.id);
+ check('retry reuses validated completed chunks from the private cache',recovered.status==='complete'&&calls-resumeCalls===2);
  console.log(`Publishing studio: ${checks}/${checks} passed`);
 }finally{await new Promise(r=>mock.close(r));}
