@@ -107,7 +107,7 @@ extensionsRouter.get('/:id/download', handle((req, res) => {
   res.type('application/zip').send(zip.toBuffer());
 }));
 extensionsRouter.get('/examples/:name/download', handle((req, res) => {
-  if (!['selection-notes', 'ai-claims', 'markdown','template-pack'].includes(req.params.name)) throw failure(404, '示例不存在');
+  if (!['selection-notes', 'ai-claims', 'markdown','template-pack','tables'].includes(req.params.name)) throw failure(404, '示例不存在');
   const zip = new AdmZip(); zip.addLocalFolder(path.join(ROOT, 'examples', 'plugins', req.params.name));
   res.type('application/zip').set('Content-Disposition', `attachment; filename="${req.params.name}.zip"`).send(zip.toBuffer());
 }));

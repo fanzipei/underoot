@@ -4,7 +4,7 @@
 
 一个**可插件扩展、可本地部署的 vibe research 平台**。用 LaTeX 写作与 PDF 审阅作为第一种研究工作流，连接 AI 建议、协作讨论、项目搜索、学术传播和可追溯版本。核心数据保存在本机 `data/`；模型与在线文献检索由用户按需启用。
 
-> 当前版本：**v0.11.0** · 论文审阅、协作与版本工作台。仓库：[fanzipei/underoot](https://github.com/fanzipei/underoot)。
+> 当前版本：**v0.12.0** · 论文审阅、协作与版本工作台。仓库：[fanzipei/underoot](https://github.com/fanzipei/underoot)。
 
 ---
 
@@ -568,3 +568,11 @@ Slides 默认目标为含封面的 18 页，通常控制在 15–20 页；短原
 新建 PDF 框选评论会保存框内文字、图片特征，并在可用时关联 SyncTeX 源码。重新编译后自动近似定位；重复或已删除内容会提示不确定并保留原框。旧评论可展开后点击“关联当前框内内容”；请先确认框里仍是目标内容。定位不调用 AI，复杂矢量图可借助源码关联。
 
 TeX 编辑器默认自动换行，状态栏“自动换行”或 Alt+Z 可切换；按用户保存当前浏览器偏好。Slides 聊天发送“精简图表说明”可将现有说明整理为简短引导句与关键词要点，保留原说明与版本历史。
+
+### 论文表格编辑插件
+
+在 TeX 表格内放置光标，点击状态栏“用表格编辑器”，或通过“更多 → 表格编辑器 · TeX 双向编辑”打开。选择文件与表格，在网格中点选单元格，编辑普通内容、公式或 TeX 宏；可增删行列、合并/拆分列，调整三线表、网格、无边框、列对齐、首行加粗、行距及列间距。展开下方 TeX 预览可从修改后的 TeX 更新网格；重新进入插件时，未保存草稿之外的外部修改会重新载入。
+
+保存由宿主确认，并使用原文件哈希防止覆盖协作修改，历史版本保留。只改单元格时保留原表格格式；样式重建只替换 tabular 区域，caption、label 和正文保持原样。三线表需要主文件加载 `booktabs`，tabularx 需要 `tabularx`；插件显示宏包提示，最终版式以编译 PDF 为准。复杂 multirow、嵌套环境及自定义列不自动重建；带注释或自定义行间规则的表格仅支持单元格编辑。
+
+插件 ID：`underoot.tables`，可在插件中心独立停用。便携源码在 `examples/plugins/tables`，通过 `node scripts/pack-extension.mjs examples/plugins/tables --out tables.zip` 打包；也可在插件中心下载表格编辑器 ZIP。权限仅有 `selection.read`、`documents.read`、`documents.write`，不调用模型。测试：`npm run test:tables`。

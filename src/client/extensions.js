@@ -31,7 +31,7 @@ export function openExtension(extension, command, context) {
   closeExtensionWindows();
   const windowEl = document.createElement('section');
   windowEl.className = 'extension-window';
-  if (extension.id === 'underoot.markdown' || extension.id === 'research.markdown') { windowEl.style.width = 'min(1000px, 95vw)'; windowEl.style.height = 'min(720px, 85vh)'; }
+  if (['underoot.markdown','research.markdown','underoot.tables','research.tables'].includes(extension.id)) { windowEl.style.width = 'min(1100px, 95vw)'; windowEl.style.height = 'min(780px, 90vh)'; }
   const channel = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
   const fragment = new URLSearchParams({ channel, parentOrigin: location.origin, command: command.id });
   const src = `/extensions/${extension.id}/${extension.version}/${extension.entry}#${fragment}`;
@@ -98,7 +98,7 @@ export async function openExtensionsManager(user) {
       bodyHtml: `${admin ? `<div class="extension-install"><label for="extension-zip">安装插件 ZIP（≤10 MB）</label><input class="input" type="file" id="extension-zip" accept=".zip" /><button class="btn" id="extension-inspect">检查清单和权限</button><div id="extension-preview"></div></div>` : '<p class="src-note">所有成员可使用已启用的插件；只有管理员可安装、启停和卸载。</p>'}
         <p class="src-note">核心保留项目、协作、讨论、版本和凭据。下面的内置功能已作为可独立停用的插件提供；第三方 ZIP 使用隔离窗口和受控宿主 API。</p>
         <div id="extension-list">${data.extensions.map((extension) => `<article class="extension-card"><div><b>${e(extension.name)}</b> <span class="badge">${extension.builtin ? '内置插件' : 'ZIP 插件'}</span><span class="badge">${extension.enabled ? '已启用' : '已停用'}</span></div><div class="src-note">${e(extension.id)} · ${e(extension.version)} · ${e(extension.author)}</div><p>${e(extension.description)}</p><details><summary>权限声明（${extension.permissions.length}）</summary>${extension.permissions.map((p) => `<div>${e(data.permissions[p] || p)}</div>`).join('')}</details><div class="assistant-buttons">${admin ? `<button class="btn btn-sm" data-toggle-extension="${extension.id}" data-enabled="${extension.enabled}">${extension.enabled ? '停用' : '启用'}</button>` : ''}${!extension.builtin && extension.enabled ? `<a class="btn btn-sm" href="/api/extensions/${extension.id}/download">下载 ZIP 分享</a>` : ''}${admin && !extension.builtin ? `<button class="btn btn-sm" data-remove-extension="${extension.id}">卸载</button>` : ''}</div></article>`).join('')}</div>
-        <p class="src-note">示例插件：<a href="/api/extensions/examples/selection-notes/download">选区研究笔记 ZIP（无需模型）</a> · <a href="/api/extensions/examples/ai-claims/download">论证强度 AI 插件 ZIP</a> · <a href="/api/extensions/examples/markdown/download">Markdown 编辑与转换 ZIP</a> · <a href="/api/extensions/examples/template-pack/download">模板扩展与 PDF 提取 ZIP</a>。开发规范和打包工具随 GitHub 仓库分发。</p>`,
+        <p class="src-note">示例插件：<a href="/api/extensions/examples/tables/download">表格编辑器 ZIP</a> · <a href="/api/extensions/examples/selection-notes/download">选区研究笔记 ZIP（无需模型）</a> · <a href="/api/extensions/examples/ai-claims/download">论证强度 AI 插件 ZIP</a> · <a href="/api/extensions/examples/markdown/download">Markdown 编辑与转换 ZIP</a> · <a href="/api/extensions/examples/template-pack/download">模板扩展与 PDF 提取 ZIP</a>。开发规范和打包工具随 GitHub 仓库分发。</p>`,
       footerHtml: '<button class="btn btn-primary" id="extension-done">完成</button>',
     });
     m.querySelector('#extension-done').onclick = () => { close(); if (changed) location.reload(); };

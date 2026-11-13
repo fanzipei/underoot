@@ -125,6 +125,14 @@ const exampleManifest = JSON.parse(fs.readFileSync(path.join(markdownDir, 'under
 exampleManifest.id = 'research.markdown'; exampleManifest.contributes.commands[0].id = 'research.markdown.open';
 fs.writeFileSync(path.join(exampleDir, 'underoot-plugin.json'), JSON.stringify(exampleManifest, null, 2));
 
+const tablesDir=path.join(root,'extensions/builtin/underoot.tables');
+await esbuild.build({entryPoints:[path.join(root,'src/plugins/tables.js')],outfile:path.join(tablesDir,'plugin.js'),bundle:true,format:'iife',target:['chrome100','firefox100','safari15'],minify:true,legalComments:'eof'});
+fs.copyFileSync(path.join(markdownDir,'katex.min.css'),path.join(tablesDir,'katex.min.css'));
+copyFolder(path.join(markdownDir,'fonts'),path.join(tablesDir,'fonts'));
+fs.copyFileSync(path.join(root,'node_modules/katex/LICENSE'),path.join(tablesDir,'KATEX-LICENSE.txt'));
+const tablesExample=path.join(root,'examples/plugins/tables');copyFolder(tablesDir,tablesExample);
+const tablesManifest=JSON.parse(fs.readFileSync(path.join(tablesDir,'underoot-plugin.json'),'utf8'));tablesManifest.id='research.tables';tablesManifest.contributes.commands[0].id='research.tables.open';fs.writeFileSync(path.join(tablesExample,'underoot-plugin.json'),JSON.stringify(tablesManifest,null,2));
+
 /** @type {import('esbuild').BuildOptions} */
 const options = {
   entryPoints: [path.join(root, 'src', 'client', 'main.js')],

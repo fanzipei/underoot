@@ -1,3 +1,4 @@
+import {findTables} from '../../plugins/table-model.js';
 import { EditorView, keymap, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor } from '@codemirror/view';
 import { EditorState, Compartment, EditorSelection } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -16,7 +17,7 @@ import { yCollab, ySyncAnnotation } from 'y-codemirror.next';
 import { createPdfViewer } from '../pdf-viewer.js';
 import { createComments } from './comments.js';
 import { createResearchTools, openWorkspaceSearch, openNotifications, openAiSettings } from './research-tools.js';
-import { loadExtensions, enabledExtension, extensionCommands, openExtensionsManager, closeExtensionWindows } from '../extensions.js';
+import { loadExtensions, enabledExtension, extensionCommands, openExtension, openExtensionsManager, closeExtensionWindows } from '../extensions.js';
 
 import { api } from '../api.js';
 import {
@@ -269,6 +270,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
             <span id="st-pos">行 1, 列 1</span>
             <span id="st-sel"></span>
             <span id="st-engine"></span>
+            <button id="table-edit-hint" class="btn btn-ghost btn-sm" style="display:none" title="当前光标位于 TeX 表格，可打开可视化编辑器">用表格编辑器</button>
             <button id="wrap-toggle" class="btn btn-ghost btn-sm" title="自动换行（Alt+Z）" aria-pressed="true">自动换行：开</button>
             <button id="vim-toggle" class="vim-toggle" title="Vim 编辑模式：normal / insert / visual；:w 编译保存" hidden>VIM OFF</button>
             <span style="margin-left:auto" id="st-collab">协同已连接</span>
@@ -418,7 +420,9 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
   root.querySelector('#wrap-toggle').onclick=()=>setWrap(!wrapEnabled);setWrap(wrapEnabled);
 
+  let tableHintTimer;
   function updateStatus() {
+    clearTimeout(tableHintTimer);tableHintTimer=setTimeout(()=>{const hint=root.querySelector('#table-edit-hint');hint.style.display=enabledExtension(extensionList,'underoot.tables')&&/\.tex$/i.test(activePath||'')&&findTables(view.state.doc.toString()).some(t=>view.state.selection.main.head>=t.from&&view.state.selection.main.head<=t.to)?'':'none';},150);
     const sel = view.state.selection.main;
     const line = view.state.doc.lineAt(sel.head);
     els.stPos.textContent = `行 ${line.number}, 列 ${sel.head - line.from + 1}`;
@@ -445,6 +449,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     getSelection: () => { const selection = view.state.selection.main; return /\.(tex|bib)$/i.test(activePath || '') ? { path: activePath, from: selection.from, to: selection.to } : null; },
     getPdfSelection: () => research.getPdfSelection(),
   };
+  root.querySelector('#table-edit-hint').onclick=()=>{const ext=extensionList.find(x=>x.id==='underoot.tables'&&x.enabled);if(ext)openExtension(ext,ext.contributes.commands[0],extensionContext);};
   const extensionActions = { 'assistant.open': () => research.open(), 'discovery.search': openWorkspaceSearch,
     'publishing.slides': () => research.openDerive('slides'), 'publishing.poster': () => research.openDerive('poster'), 'publishing.chat':()=>research.openDerive('chat'),
     'publishing.template': () => research.openTemplate(),'publishing.templates':()=>openTemplateLibrary(), 'editing.vim':()=>setVim(!vimEnabled) };
@@ -1459,7 +1464,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
       try { entry.doc.destroy(); } catch { /* ignore */ }
     }
     docs.clear();
-    view.destroy();
+    clearTimeout(tableHintTimer);view.destroy();
   };
 }
 
