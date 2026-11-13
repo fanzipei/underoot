@@ -1,3 +1,4 @@
+import{renderEditorial as v6Render}from'../skills/underoot-paper-publishing/scripts/render-editorial-v6.mjs';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import {once}from'node:events';
@@ -74,6 +75,13 @@ try{
   check('v5 output upgrades to native theme without a false manual-edit conflict',native.status==='complete');draft=native.result.draft;original=(await req(file,owner)).data.content;
   check('explicit enrichment recovers a source-grounded table conclusion',draft.pages.some(p=>p.tables?.length&&p.takeaway.includes('same restricted sample')));
   check('native upgrade retains content and removes absolute font overrides',draft.pages.some(p=>p.title==='A user-reviewed research question')&&original.includes('\\usetheme{metropolis}')&&!original.includes('\\fontsize'));
+ }
+ if(kind==='slides'){
+  const old6=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const saved6=JSON.parse(old6.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);saved6.rendererVersion=6;
+  const tex6=v6Render({...saved6.plan,editorial:saved6.editorial},saved6.options,publishingStyles.slides.find(s=>s.id===saved6.options.style));old6.prepare('UPDATE publishing_sessions SET payload=? WHERE id=?').run(JSON.stringify(saved6),draft.id);old6.close();await req(file,owner,'PUT',{content:tex6});
+  const compactJob=await req(`/api/workspace/projects/${derived}/derive/jobs`,owner,'POST',{phase:'reflow',draftId:draft.id,version:draft.version,confirmed:true,identity,count:18,compact:true});const compactResult=await wait(compactJob.data.id,`/api/workspace/projects/${derived}/derive`);
+  check('v6 projects compact through guarded reflow with their original project identity',compactResult.status==='complete'&&compactResult.result.draft.projectId===derived&&compactResult.result.draft.rendererVersion===7);draft=compactResult.result.draft;original=(await req(file,owner)).data.content;
+  check('compact reflow records the total-page target and retains source notes',draft.options.count===18&&draft.pages.length+1<=20&&original.includes('UNDEROOT:TITLE'));
  }
  // Recreate the v0.8 session format to exercise upgrade/reflow of existing outputs.
  const migration=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const payload=JSON.parse(migration.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);if(kind==='slides'){delete payload.rendererVersion;delete payload.editorial.identity;}else{payload.rendererVersion=3;payload.preamblePrefix='% retained package-option repair\n';}

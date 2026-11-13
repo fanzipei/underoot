@@ -30,4 +30,5 @@ const url='https://github.com/fanzipei/underoot',buffer=await QRCode.toBuffer(ur
 let matching=true;for(let y=0;y<qr.modules.size;y++)for(let x=0;x<qr.modules.size;x++){const at=(Math.floor((y+4.5)*step)*png.width+Math.floor((x+4.5)*step))*4;if((png.data[at]<128)!==!!qr.modules.get(y,x))matching=false;}
 check('PNG module matrix encodes the intended project URL',matching);
 check('QR quiet zone stays white and opaque',png.data[0]===255&&png.data[1]===255&&png.data[2]===255&&png.data[3]===255);
+const independent={pages:[{id:'crowded',figures:[{}]},{id:'readable',figures:[{}]}]};adjustLayout(independent,{kind:'slides'},{},{maximum:1.1,pages:[{id:'crowded',fill:1.1},{id:'readable',fill:.7}]},true);check('an overflowing image page does not shrink other figures',independent.pages[0].figureHeight===.45&&independent.pages[1].figureHeight===undefined);
 console.log(`Publication fit unit: ${count}/${count} passed`);

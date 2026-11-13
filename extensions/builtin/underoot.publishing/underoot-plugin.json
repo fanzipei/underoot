@@ -1,7 +1,7 @@
 {
   "id": "underoot.publishing",
   "name": "学术传播与投稿",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "apiVersion": 1,
   "runtime": "builtin",
   "entry": "activate.mjs",

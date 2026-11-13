@@ -1,3 +1,6 @@
+import{compactSlides}from'../../../skills/underoot-paper-publishing/scripts/slide-composition.mjs';
+import{paperReferences,relatedReferences}from'../../../skills/underoot-paper-publishing/scripts/paper-references.mjs';
+import{renderEditorial as v6Render}from'../../../skills/underoot-paper-publishing/scripts/render-editorial-v6.mjs';
 import{summaryCache}from'./summary-cache.mjs';
 import{sourceEvidence}from'../../../skills/underoot-paper-publishing/scripts/source-evidence.mjs';
 import{enrichEvidencePages}from'../../../skills/underoot-paper-publishing/scripts/asset-findings.mjs';
@@ -57,7 +60,7 @@ function access(project,user,id){
 }
 function identityFor(d){const stored=d.pendingIdentity||d.editorial.identity||d.plan.identity||{};if(d.identityReviewed)return stored;const extracted=publicationIdentity(d.plan.chunks.map(c=>c.text||'').join(''),d.plan.author);return{...extracted,...stored,authors:stored.authors||extracted.authors,affiliations:stored.affiliations||extracted.affiliations,contact:stored.contact||extracted.contact};}
 function assetsFor(row){return [...new Set([...(row.data.plan.assets||[]),...(row.derived_project?imageAssets(projectDir(row.derived_project)):[]),...(row.data.uploadedAssets||[]).map(a=>a.path)])];}
-function renderSession(d){const info={...d.plan,editorial:d.editorial};const style=d.options.customTemplate||publishingStyles[d.options.kind].find(s=>s.id===d.options.style);return(d.preamblePrefix||'')+(d.rendererVersion>=6?renderPublication(info,d.options):d.rendererVersion===5?v5Render(info,d.options,style):d.rendererVersion===4?v4Render(info,d.options,style):d.rendererVersion===3?v3Render(info,d.options,style):legacyRender(info,d.options,style));}
+function renderSession(d){const info={...d.plan,editorial:d.editorial};const style=d.options.customTemplate||publishingStyles[d.options.kind].find(s=>s.id===d.options.style);return(d.preamblePrefix||'')+(d.rendererVersion>=7?renderPublication(info,d.options):d.rendererVersion===6?v6Render(info,d.options,style):d.rendererVersion===5?v5Render(info,d.options,style):d.rendererVersion===4?v4Render(info,d.options,style):d.rendererVersion===3?v3Render(info,d.options,style):legacyRender(info,d.options,style));}
 function expose(row){const d=row.data;return{id:row.id,version:row.version,projectId:row.derived_project,options:d.options,useAI:d.useAI,rendererVersion:d.rendererVersion||2,title:d.plan.title,author:d.plan.author,pages:d.editorial.pages.map(standalonePage),identity:identityFor(d),assets:assetsFor(row),warnings:d.editorial.warnings,figures:(d.plan.visuals||[]).map(v=>({...v,caption:standalonePage({figures:[v]}).figures[0].caption})),messages:d.messages||[],proposal:d.proposal||null,result:d.result||null};}
 function store(row){const result=db.prepare('UPDATE publishing_sessions SET payload=?,version=version+1,updated_at=?,derived_project=? WHERE id=? AND version=?').run(JSON.stringify(row.data),Date.now(),row.derived_project||null,row.id,row.version);if(!result.changes)throw failure(409,'提纲已被修改，请重新打开');row.version++;return expose(row);}
 export function listSessions(project,user){return{sessions:db.prepare('SELECT id,version,derived_project,updated_at FROM publishing_sessions WHERE (source_project=? AND owner=?) OR derived_project=? ORDER BY updated_at DESC LIMIT 20').all(project.id,user,project.id)};}
@@ -73,7 +76,7 @@ export async function prepareSession(project,user,body,runtime={}){
  const check=()=>{if(runtime.signal?.aborted)throw failure(499,'已取消');const account=db.prepare('SELECT status,disabled FROM users WHERE id=?').get(user);if(!account||account.disabled||account.status!=='active'||!['owner','editor'].includes(memberRole(project.id,user)))throw failure(403,'源项目编辑权限已变化');if(!db.prepare("SELECT enabled FROM extensions WHERE id='underoot.publishing'").get()?.enabled)throw failure(409,'发布插件已停用');};
  const summary=await summarizePaper(plan,options,{useAI:!!body.useAI,model:(instruction,input)=>callModel(instruction,input,[],{timeout:120000,signal:runtime.signal}),progress:runtime.progress,check,cache:body.useAI?summaryCache(project,user,plan):null});check();
  const editorial=editorialPlan(plan,summary,options);for(const page of editorial.pages)if(!layouts.has(page.layout))page.layout=page.figures.length?'visual':page.bullets.length<2?'statement':'split';
- editorial.identity=plan.identity;const id=crypto.randomUUID();const data={source,plan,summary,editorial,options,useAI:!!body.useAI,messages:[],evidenceVersion:5,rendererVersion:6};
+ editorial.identity=plan.identity;const id=crypto.randomUUID();const data={source,plan,summary,editorial,options,useAI:!!body.useAI,messages:[],evidenceVersion:5,rendererVersion:7};
  db.prepare('INSERT INTO publishing_sessions(id,source_project,owner,version,payload,updated_at) VALUES(?,?,?,1,?,?)').run(id,project.id,user,JSON.stringify(data),Date.now());
  return{draft:expose({id,version:1,data})};
 }
@@ -105,7 +108,7 @@ export async function generateSession(project,user,id,body,runtime={}){
  if(generating.has(id))throw failure(409,'此提纲正在生成');generating.add(id);
  try{
  const d=row.data;
- d.rendererVersion=6;d.editorial=standaloneEditorial(d.editorial);d.editorial.identity=identityFor(d);
+ d.rendererVersion=7;d.editorial=standaloneEditorial(d.editorial);d.editorial.identity=identityFor(d);
  const result=await deriveProject(project,user,{...d.options,useAI:d.useAI,consent:d.useAI,maxModelCalls:d.plan.modelCalls},{...runtime,approved:d});
  row.derived_project=result.project.id;row.data.result=result;row.data.entry=result.project.mainFile;store(row);return{...result,draft:expose(row)};
  }finally{generating.delete(id);}
@@ -172,14 +175,20 @@ export async function reflowSession(project,user,id,body,runtime={}){
   const d=structuredClone(row.data),current=readDocument(project,d.entry);
   if(current.content!==renderSession(row.data))throw failure(409,'生成的 TeX 已有手工修改，自动重排已停止；请先保留或合并这些编辑');
   if(d.evidenceVersion!==5){const fresh=sourceEvidence(d.plan.chunks.map(c=>c.text||'').join(''),d.plan.chunks,d.plan.figures||d.plan.visuals?.map(v=>v.path)||[]),existing=d.plan.tables||[];d.plan.tables=[...existing,...fresh.tables.filter(t=>!existing.some(old=>JSON.stringify([old.headers,old.rows])===JSON.stringify([t.headers,t.rows]))).map(t=>({...t,id:'source-v5-'+t.id}))];d.evidenceVersion=5;}
-  if(body.style||body.orientation||body.ratio||body.columns)d.options=publishingOptions({...d.options,...Object.fromEntries(['style','orientation','ratio','columns'].filter(k=>body[k]!==undefined).map(k=>[k,body[k]]))},listCustomTemplates(user));
+  if(body.style||body.orientation||body.ratio||body.columns||body.count!==undefined)d.options=publishingOptions({...d.options,...Object.fromEntries(['style','orientation','ratio','columns','count'].filter(k=>body[k]!==undefined).map(k=>[k,body[k]]))},listCustomTemplates(user));
+  if(body.compact&&d.options.kind==='slides'){
+   d.plan.references=d.plan.references?.length?d.plan.references:paperReferences(projectDir(project.id),d.plan.chunks.map(c=>c.text||'').join('\n'),d.plan.chunks);
+   d.editorial.maxSlidePages=Math.max(20,d.options.count||18);const compact=compactSlides(d.editorial.pages,d.plan,d.options);d.editorial.pages=compact.pages;d.editorial.archive.push(...compact.archive);
+   for(const page of d.editorial.pages)if(page.role==='gap')page.references=relatedReferences(page,d.plan);
+   rebalance(d);d.editorial.warnings.push(`已整理为 ${d.editorial.pages.length+1} 页（含封面），完整比较与未显示细节保留在资料和版本中。`);
+  }
   if(body.withFindings&&d.options.kind==='slides'){
    const fresh=sourceEvidence(d.plan.chunks.map(c=>c.text||'').join('\n'),d.plan.chunks,d.plan.figures||d.plan.visuals?.map(v=>v.path)||[]);
    d.plan.visuals=(d.plan.visuals||[]).map(v=>({...v,findings:fresh.visuals.find(f=>f.path===v.path)?.findings||v.findings||[]}));
    d.plan.tables=(d.plan.tables||[]).map(t=>({...t,findings:fresh.tables.find(f=>JSON.stringify([f.caption,f.headers,f.rows])===JSON.stringify([t.caption,t.headers,t.rows]))?.findings||t.findings||[]}));
    const added=enrichEvidencePages(d.editorial,d.plan);d.editorial.warnings.push(`从保存的原稿为 ${added} 个图表页补充了简短说明；已填写的结论保留，未找到可靠短句的页面未补造结论。`);
   }
-  d.editorial.identity=validateIdentity(body.identity,assetsFor(row),identityFor(d));delete d.pendingIdentity;d.identityReviewed=true;d.rendererVersion=6;d.editorial=standaloneEditorial(d.editorial);d.editorial.identity=identityFor(d);
+  d.editorial.identity=validateIdentity(body.identity,assetsFor(row),identityFor(d));delete d.pendingIdentity;d.identityReviewed=true;d.rendererVersion=7;d.editorial=standaloneEditorial(d.editorial);d.editorial.identity=identityFor(d);
   const revision=snapshot(project.id,user,'自动重排前保留当前版式','publishing',true);fs.mkdirSync(dir,{recursive:true});materialize(revision,dir);
   await materializeBranding(dir,d.editorial.identity,d.uploadedAssets||[]);check();
   let content;const layout=await fitPublication({...d.plan,editorial:d.editorial},d.options,{render:(info,options)=>(d.preamblePrefix||'')+renderPublication(info,options),write:text=>{content=text;fs.writeFileSync(resolveInside(dir,d.entry),text);},audit:()=>auditDraft(stagedId,d.entry,d.options,{check,progress:runtime.progress}),check,progress:runtime.progress});check();
@@ -190,7 +199,7 @@ export async function reflowSession(project,user,id,body,runtime={}){
    const report=resolveInside(projectDir(project.id),latestLayoutReport);fs.mkdirSync(path.dirname(report),{recursive:true});fs.writeFileSync(report,JSON.stringify({identity:d.editorial.identity,layout,sourceRevision:revision.id,createdAt:Date.now()},null,2));copied.push(report);
    writeDocument(project,user,{path:d.entry,hash:current.hash,content});
   }catch(error){for(const full of copied)fs.rmSync(full,{force:true});throw error;}
-  d.result={...d.result,latestLayoutReport,editorial:{...d.result.editorial,layout},warning:layout.status==='unavailable'?'已保存署名与版式；主机没有执行真实编译，请编译核对 PDF。':`已在当前项目完成 ${layout.iterations.length} 轮实际编译与空间测量，历史版本已保留。${layout.issues.join('；')}`};d.proposal=null;row.data=d;
+  d.result={...d.result,latestLayoutReport,editorial:{...d.result.editorial,pages:d.editorial.pages.length,outline:d.editorial.pages.map(p=>({title:p.title,takeaway:p.takeaway})),layout},warning:layout.status==='unavailable'?'已保存署名与版式；主机没有执行真实编译，请编译核对 PDF。':`已在当前项目完成 ${layout.iterations.length} 轮实际编译与空间测量，历史版本已保留。${layout.issues.join('；')}`};d.proposal=null;row.data=d;
   return{...d.result,draft:store(row)};
  }finally{generating.delete(id);fs.rmSync(dir,{recursive:true,force:true});}
 }

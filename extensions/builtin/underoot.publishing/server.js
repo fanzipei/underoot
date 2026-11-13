@@ -1,3 +1,4 @@
+import{paperReferences}from'../../../skills/underoot-paper-publishing/scripts/paper-references.mjs';
 import{summaryCache}from'./summary-cache.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,7 +44,7 @@ export function prepare(project, root = projectDir(project.id)) {
  const selected = figures.slice(0,32);
  const digest = hash(source + JSON.stringify(selected.map((rel) => [rel,hash(fs.readFileSync(resolveInside(root,rel)))])));
  const plan=paperPlan(source,{title,author,files:expanded.files,warnings:expanded.warnings});
- return { ...plan, digest, figures:selected,identity,assets:imageAssets(root),...sourceEvidence(source,plan.chunks,selected) };
+ return { ...plan, digest, figures:selected,identity,references:paperReferences(root,source,plan.chunks),assets:imageAssets(root),...sourceEvidence(source,plan.chunks,selected) };
 }
 export function publishingPlan(project,userId) {
  flushProject(project.id);

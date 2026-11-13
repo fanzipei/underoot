@@ -12,7 +12,7 @@ export function activePublishingJobs(projectId,userId){return{jobs:[...jobs.valu
 export function startPublishing(project, userId, body) {
  const draft=body.draftId?getSession(project,userId,body.draftId):null;
  if(draft&&(!body.confirmed||body.version!==draft.version))throw failure(409,'请保存并确认当前提纲');
- const reflowOptions=draft&&body.phase==='reflow'?publishingOptions({...draft.options,...Object.fromEntries(['style','orientation','ratio','columns'].filter(k=>body[k]!==undefined).map(k=>[k,body[k]]))},listCustomTemplates(userId)):null;
+ const reflowOptions=draft&&body.phase==='reflow'?publishingOptions({...draft.options,...Object.fromEntries(['style','orientation','ratio','columns','count'].filter(k=>body[k]!==undefined).map(k=>[k,body[k]]))},listCustomTemplates(userId)):null;
  const options = reflowOptions || draft?.options || publishingOptions(body,listCustomTemplates(userId));
  if(draft)body={...body,...options,useAI:false,planDigest:'approved'};
  if (body.confirmed !== true || !body.planDigest) throw failure(400,'请先查看分块计划并确认生成风格');

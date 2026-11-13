@@ -1,3 +1,5 @@
+import{compactSlides}from'./slide-composition.mjs';
+import{relatedReferences}from'./paper-references.mjs';
 import{assetInsight}from'./asset-findings.mjs';
 import{tablePanels,posterResultTable,presentationTables}from'./portable-table.mjs';
 import{validateDiagram}from'./vector-diagram.mjs';
@@ -10,11 +12,12 @@ const evidenceRank=v=>/overall|main result|comparison|accuracy|performance|frame
 const affinity=(card,v)=>{const words=new Set(((v.caption||'')+' '+(v.path||'')).toLowerCase().match(/[a-z]{4,}/g)||[]);const text=(card.title+' '+card.takeaway+' '+card.bullets.join(' ')).toLowerCase();let score=[...words].filter(w=>!['figure','table','with','from','that','this'].includes(w)&&text.includes(w)).length;const role=editorialRole(v.caption||'');if(role===card.role&&role!=='detail')score+=8;return score;};
 const roles=['question','gap','method','result','limitation','conclusion','detail'];
 export function editorialRole(title,text=''){
- const value=title+' '+text;
+ const value=(title+' '+text).trim();
+ if(/^(?:existing|prior|previous)\b|related work|相关工作/i.test(title))return'gap';
  for(const[role,pattern]of[
   ['limitation',/limitation|caveat|threat|局限|不足|边界/i],['conclusion',/conclu|take.?home|future work|结论|总结|展望/i],
   ['result',/result|finding|experiment|evaluat|ablation|accuracy|结果|实验|发现|消融|评估/i],['method',/method|approach|framework|model|算法|方法|模型|框架/i],
-  ['gap',/related|prior work|challenge|gap|相关|挑战|差距/i],['question',/research question|problem statement|objective|hypothesis|abstract|introduc|background|motivat|overview|研究问题|研究目标|引言|背景|摘要|概述/i]
+  ['gap',/related|prior work|existing methods|previous methods|cannot jointly|challenge|gap|相关|挑战|差距/i],['question',/\?$|research question|problem statement|objective|hypothesis|abstract|introduc|background|motivat|overview|研究问题|研究目标|引言|背景|摘要|概述/i]
  ])if(pattern.test(value))return role;
  return'detail';
 }
@@ -101,6 +104,8 @@ export function editorialPlan(plan,summary,options){
  }
  pages.sort((a,b)=>Number(!!a.appendix)-Number(!!b.appendix)||(!summary.aiNarrative&&options.kind==='slides'?['question','gap','method','result','detail','limitation','conclusion'].indexOf(a.role)-['question','gap','method','result','detail','limitation','conclusion'].indexOf(b.role):0));
  let displayed=pages;
+ if(options.kind==='slides'){const compact=compactSlides(pages,plan,options);displayed=compact.pages;archive.push(...compact.archive);for(const p of displayed)if(p.role==='gap')p.references=relatedReferences(p,plan);}
+ else {
  const evidencePages=pages.filter(p=>p.figures.length||p.tables.length);
  const mainEvidence=pages.filter(p=>!p.appendix&&(p.figures.length||p.tables.length));
  const displayLimit=options.kind==='poster'?options.count:Math.min(72,Math.max(options.count,evidencePages.length+6));
@@ -114,6 +119,7 @@ export function editorialPlan(plan,summary,options){
   for(const page of pages.filter(p=>!chosen.has(p))){
    archive.push(page);
   }
+ }
  }
  if(archive.length)warnings.push(`显示层选用 ${displayed.length} 个内容块，另有 ${archive.length} 个细节块保存在提纲记录中；分块 ID 覆盖不代表所有科学细节都显示在页面上。`);
  let posterFooter,posterGap;
@@ -133,7 +139,7 @@ export function editorialPlan(plan,summary,options){
  const shownFigures=new Set(displayed.flatMap(p=>p.figures.map(v=>v.path))),shownTables=new Set(displayed.flatMap(p=>(p.tables||[]).map(t=>t.id.split(/-\d+-\d+$/)[0])));
  if(shownFigures.size<(plan.visuals||[]).length||shownTables.size<(plan.tables||[]).length)warnings.push(`证据选用：${shownFigures.size}/${(plan.visuals||[]).length} 张原图，${shownTables.size}/${(plan.tables||[]).length} 个原始表格；未展示素材保留在原稿，不能将来源覆盖理解为图表全部显示。`);
  const {columns,weights:sizes}=balanceColumns(displayed.filter(p=>p.id!==posterFooter),options.columns||3);
- if(options.kind==='slides'&&pages.length>options.count)warnings.push(`为保留可读字号，正文拆为 ${pages.length} 页，超过目标 ${options.count} 页；可在提纲中进一步精简。`);
+ if(options.kind==='slides'&&archive.length)warnings.push(`报告显示 ${displayed.length+1} 页（含封面）；完整比较与未选细节保留在项目资料中，不自动追加实验表格补充页。`);
  rounds.push({round:4,name:options.kind==='slides'?'单页信息密度与分页':'海报信息层级与栏位平衡',changes:['长段落转为有来源的要点，超量内容保留在笔记','不通过不断缩小字号掩盖溢出'],metrics:{pages:displayed.length,columnWeights:sizes,archivedDetails:archive.length}});
  // 5. Review: source coverage is a provenance invariant, not a claim of semantic completeness.
  const displayedSources=new Set(displayed.flatMap(p=>p.sourceIds));
@@ -142,9 +148,9 @@ export function editorialPlan(plan,summary,options){
  if(missing.length||invalid.length||!displayed.length)throw Object.assign(Error('发布提纲的来源覆盖无效，原稿保留'),{status:502});
  const dense=displayed.filter(p=>p.bullets.some(b=>weight(b)>textLimit));
  const sourceNumbers=new Set((plan.chunks.map(c=>c.text||'').join(' ').match(/\d+(?:\.\d+)?/g)||[]));
- const unverified=unique(displayed.flatMap(p=>(p.title+' '+(p.takeaway||'')+' '+p.bullets.join(' ')).match(/\d+(?:\.\d+)?/g)||[])).filter(n=>!sourceNumbers.has(n));
+ const unverified=unique([...displayed,...archive].flatMap(p=>(p.title+' '+(p.takeaway||'')+' '+p.bullets.join(' ')).match(/\d+(?:\.\d+)?/g)||[])).filter(n=>!sourceNumbers.has(n));
  if(unverified.length)warnings.push('显示内容中存在未能按原值匹配到源码的数字，需核验单位/换算或删除无依据主张：'+unverified.join('、'));
  if(dense.length)warnings.push(`${dense.length} 个内容块含不能安全拆分的长句，请人工压缩；原句保留，未截断限定条件。`);
  rounds.push({round:5,name:'事实、可读性与交付复核',changes:['核对来源 ID、原值数字和完整分块笔记','列出未解决项；真实编译/视觉检查另行记录，不以预检冒充'],metrics:{coverage:covered.size,displayedSources:displayedSources.size,total:known.size,denseBlocks:dense.length,unverifiedNumbers:unverified}});
- return{version:2,posterFooter,posterGap,kind:options.kind,title:plan.title,author:plan.author,pages:displayed,columns,archive,rounds,warnings,metrics:{pages:displayed.length,sourceCoverage:covered.size,displayedSources:displayedSources.size,totalChunks:known.size,denseBlocks:dense.length},notes:summary.notes};
+ return{version:2,maxSlidePages:options.kind==='slides'?Math.max(20,options.count||18):undefined,posterFooter,posterGap,kind:options.kind,title:plan.title,author:plan.author,pages:displayed,columns,archive,rounds,warnings,metrics:{pages:displayed.length,sourceCoverage:covered.size,displayedSources:displayedSources.size,totalChunks:known.size,denseBlocks:dense.length},notes:summary.notes};
 }

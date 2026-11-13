@@ -1,3 +1,4 @@
+import{paperReferences}from'./paper-references.mjs';
 /** Standalone source-preserving publishing CLI. No API key or model dependency. */
 import fs from'node:fs';import path from'node:path';import{spawnSync}from'node:child_process';import{fileURLToPath}from'node:url';
 import{expandPaper,paperPlan,plainText}from'./chunk-paper.mjs';import{sourceEvidence,argument}from'./source-evidence.mjs';import{summarizePaper}from'./summarize.mjs';import{editorialPlan}from'./editorial-plan.mjs';import{publishingOptions,renderPublication}from'./styles.mjs';
@@ -19,7 +20,7 @@ for(const match of source.matchAll(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/
   if(safe(rel)&&!figures.includes(rel))figures.push(rel);
  }
 }
-const plan=paperPlan(source,{title:plainText(argument(source,'title')?.value||path.basename(root)),author:plainText(argument(source,'author')?.value||''),files:expanded.files,warnings:expanded.warnings,figures:figures.slice(0,8)});Object.assign(plan,sourceEvidence(source,plan.chunks,plan.figures));
+const plan=paperPlan(source,{title:plainText(argument(source,'title')?.value||path.basename(root)),author:plainText(argument(source,'author')?.value||''),files:expanded.files,warnings:expanded.warnings,figures:figures.slice(0,32)});Object.assign(plan,sourceEvidence(source,plan.chunks,plan.figures),{references:paperReferences(root,source,plan.chunks)});
 let summary=await summarizePaper(plan,options);
 if(args.includes('--outline')){
  const supplied=JSON.parse(fs.readFileSync(value('--outline'),'utf8'));
