@@ -1,6 +1,6 @@
 {
   "name": "underoot",
-  "version": "0.10.5",
+  "version": "0.10.6",
   "private": true,
   "type": "module",
   "description": "可插件扩展、可本地部署的 vibe research 协作平台",

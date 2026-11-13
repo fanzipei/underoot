@@ -156,6 +156,33 @@ try{
  const callsBeforeUndo=calls;quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'撤销上次修改',consent:true})).data;
  quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:quickDraft.version,proposalId:quickDraft.proposal.id,accept:true})).data;
  check('chat undo restores the prior TeX without another model call',calls===callsBeforeUndo&&(await req(quickFile,owner)).data.content===quickOriginal);
+
+ const deletionCalls=calls,originalIds=quickDraft.pages.map(p=>p.id),deletedId=originalIds[1];
+ check('cover removal is rejected without a model call',(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删掉第1页',consent:true})).status===400&&calls===deletionCalls);
+ quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删掉第3页',consent:true})).data;
+ check('delete page command creates a structural proposal without AI',quickDraft.proposal?.action==='delete'&&quickDraft.proposal.pageId===deletedId&&quickDraft.proposal.pageNumber===3&&calls===deletionCalls);
+ quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:quickDraft.version,proposalId:quickDraft.proposal.id,accept:false})).data;
+ check('rejecting a deletion preserves the original TeX',(await req(quickFile,owner)).data.content===quickOriginal&&quickDraft.pages.length===originalIds.length);
+ quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'请删除第 3 页。',consent:true})).data;
+ const deletionVersion=quickDraft.version,deletionProposal=quickDraft.proposal.id;
+ quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:deletionVersion,proposalId:deletionProposal,accept:true})).data;
+ const deletedText=(await req(quickFile,owner)).data.content,startMark=`% underoot:block:${deletedId}:start`,endMark=`% underoot:block:${deletedId}:end`,from=quickOriginal.indexOf(startMark),to=quickOriginal.indexOf(endMark)+endMark.length;
+ check('accepting deletion removes exactly one frame and retains all other bytes',deletedText===quickOriginal.slice(0,from)+quickOriginal.slice(to)&&JSON.stringify(quickDraft.pages.map(p=>p.id))===JSON.stringify(originalIds.filter(p=>p!==deletedId)));
+ check('a stale deletion cannot apply twice',(await req(quickDest+'/decide',owner,'POST',{version:deletionVersion,proposalId:deletionProposal,accept:true})).status===409);
+ if((await req('/api/system/engines',owner)).data.engines.some(e=>e.id==='xelatex'))check('slides compile after page deletion',(await req(`/api/projects/${quickDraft.projectId}/compile`,owner,'POST',{force:true})).data.ok);
+ quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'撤销上次修改',consent:true})).data;
+ check('undo deletion offers the removed page at its original position',quickDraft.proposal.action==='restore'&&quickDraft.proposal.pageNumber===3);
+ quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:quickDraft.version,proposalId:quickDraft.proposal.id,accept:true})).data;
+ check('undo deletion restores exact TeX and page order without AI',(await req(quickFile,owner)).data.content===quickOriginal&&JSON.stringify(quickDraft.pages.map(p=>p.id))===JSON.stringify(originalIds)&&calls===deletionCalls);
+ quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'把第3页删掉',consent:true})).data;
+ quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:quickDraft.version,proposalId:quickDraft.proposal.id,accept:true})).data;
+ const afterDelete=(await req(quickFile,owner)).data.content;await req(quickFile,owner,'PUT',{content:afterDelete+'\n% concurrent author edit'});
+ check('undo deletion preserves subsequent manual edits',(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'撤销上次修改',consent:true})).status===409&&(await req(quickFile,owner)).data.content===afterDelete+'\n% concurrent author edit');
+ await req(quickFile,owner,'PUT',{content:afterDelete});quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'撤销上次修改',consent:true})).data;quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:quickDraft.version,proposalId:quickDraft.proposal.id,accept:true})).data;
+ check('restoring the unchanged deletion checkpoint enables exact undo',(await req(quickFile,owner)).data.content===quickOriginal&&calls===deletionCalls);
+ const edited=quickOriginal.replace(startMark,startMark+'\n% authored edit retained');await req(quickFile,owner,'PUT',{content:edited});
+ check('deleting a manually edited frame is blocked',(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删除第3页',consent:true})).status===409&&calls===deletionCalls);
+ await req(quickFile,owner,'PUT',{content:quickOriginal});
  if((await req('/api/system/engines',owner)).data.engines.some(e=>e.id==='xelatex')){
   const project=(await req('/api/projects',owner,'POST',{name:'Oversized caption safety fixture',template:'blank'})).data.project;
   const source=String.raw`\documentclass{article}\author{Fixture Author}\begin{document}\section{Method}We evaluate the measured evidence.\begin{figure}\includegraphics{accuracy.png}\caption{`+'Measured caption words '.repeat(2000)+String.raw`}\end{figure}\end{document}`;
