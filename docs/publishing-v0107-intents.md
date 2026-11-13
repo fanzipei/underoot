@@ -1,0 +1,9 @@
+# Model-routed Slides operations — v0.10.7
+
+The previous deletion recognizer accepted Arabic digits only. `删除第三页` therefore entered the page-rewrite path and could fail the rewrite schema. Adding more exact phrase rules would leave the same problem for paraphrases.
+
+Slides chat now uses a small intent request before content editing (except deterministic undo). Send only the user's instruction, visible page numbers and bounded titles. The model returns `delete_page`, `edit_page` or `clarify`, plus a visible page number. It can resolve Chinese ordinals, paraphrases and uniquely matching titles. A whole-page deletion skips the content-rewrite request and uses the existing validated structural operation. A content edit continues through the source-grounded editing path. Undo still makes no model request.
+
+The program bounds and validates the target, rejects cover/last-body-page removal, rechecks the session after intent resolution, and retains the existing exact-block, concurrent edit and undo protections. Never accept model-generated TeX or infer a deletion from a missing page object. Invalid intent responses receive one schema retry, then an actionable error without changes. Negation, item deletion and ambiguous multiple operations are distinguished in the prompt and regression tests. A normal content edit now has an additional small intent call; a deletion needs only the intent call. This is an explicit latency/token tradeoff for natural-language compatibility.
+
+Live checks against the configured API passed three cases in three calls: `删除第三页` and `请把第三页拿掉` resolved to delete page 3; `删除第三页的第一条` resolved to edit page 3. These checks used generic page titles and did not change user projects. Integration fixtures additionally cover negation, ambiguity, invalid targets and the retained deletion/undo safety guards.

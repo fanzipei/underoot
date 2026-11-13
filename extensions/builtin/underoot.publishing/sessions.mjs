@@ -1,3 +1,4 @@
+import {slideIntent} from './slide-intent.mjs';
 import{compactSlides}from'../../../skills/underoot-paper-publishing/scripts/slide-composition.mjs';
 import{paperReferences,relatedReferences}from'../../../skills/underoot-paper-publishing/scripts/paper-references.mjs';
 import{renderEditorial as v6Render}from'../../../skills/underoot-paper-publishing/scripts/render-editorial-v6.mjs';
@@ -129,12 +130,15 @@ async function propose(project,user,id,body){
   if(current&&(project.id!==row.derived_project||current.hash!==previous.afterHash))throw failure(409,'删除后 TeX 已被编辑，请从历史版本恢复或手动合并；已有修改保留');
   row.data.proposal={id:crypto.randomUUID(),author:user,pageId:previous.pageId,page:clone(previous.before),action:'restore',pageNumber:previous.index+2,explanation:`已恢复第 ${previous.index+2} 页；其他页面保留`,hash:current?.hash,request};return store(row);
  }
- const deletion=request.trim().replace(/[。！!？?]$/,'').match(/^(?:请\s*)?(?:(?:删(?:除|掉)?|移除)\s*第?\s*(\d+)\s*(?:页|张)|(?:把\s*)?第\s*(\d+)\s*(?:页|张)\s*(?:删(?:除|掉)?|移除)|(?:delete|remove)\s+(?:slide|page)\s+(\d+))$/i);
+ const intent=row.data.options.kind==='slides'&&!undo?await slideIntent(request,pages,body.pageId,(instruction,input)=>callModel(instruction,input,[],{timeout:90000,maxOutputTokens:1024})):null;
+ if(intent){const fresh=access(project,user,id);if(generating.has(id)||fresh.version!==row.version)throw failure(409,'识别操作期间提纲已变化，请重试');if(intent.action==='clarify')throw failure(400,intent.message||'请明确要操作的单页以及修改内容；当前内容保留');}
+ const deletion=intent?.action==='delete_page';
  if(deletion&&row.data.options.kind!=='slides')throw failure(400,'删除整页命令适用于 Slides；Poster 请指定要修改的模块内容');
- let selected=pages.find(p=>p.id===body.pageId);
- if(deletion){const index=Number(deletion[1]||deletion[2]||deletion[3])-2;if(index<0)throw failure(400,'第 1 页是封面，暂不支持用正文页删除命令移除');if(index>=pages.length)throw failure(400,'该页不存在；Slides 第 1 页为封面，正文从第 2 页开始');if(pages.length<=1)throw failure(400,'请至少保留一页正文');selected=pages[index];}
+ let selected=intent?.pageNumber?pages[intent.pageNumber-2]:pages.find(p=>p.id===body.pageId);
+ if(intent?.pageNumber===1&&!deletion)throw failure(400,'第 1 页为封面；请用作者、单位或版式命令调整封面');
+ if(deletion){const index=intent.pageNumber-2;if(index<0)throw failure(400,'第 1 页是封面，暂不支持用正文页删除命令移除');if(index>=pages.length)throw failure(400,'该页不存在；Slides 第 1 页为封面，正文从第 2 页开始');if(pages.length<=1)throw failure(400,'请至少保留一页正文');selected=pages[index];}
 
- if(!body.pageId&&!deletion){const number=request.match(/第\s*(\d+)\s*(?:页|张|块)|(?:slide|page)\s*(\d+)/i);if(number){const index=Number(number[1]||number[2])-(row.data.options.kind==='slides'?2:1);if(index<0||index>=pages.length)throw failure(400,'该页不存在；Slides 第 1 页为封面，正文从第 2 页开始');selected=pages[index];}else{const role=/方法|流程|method|framework/i.test(request)?'method':/实验|结果|表格|result|table/i.test(request)?'result':null;selected=pages.find(p=>request.includes(p.title))||(role&&pages.find(p=>p.role===role))||pages.find(p=>p.id===row.data.messages?.at(-1)?.pageId)||pages[0];}}
+ if(!body.pageId&&!deletion&&!intent?.pageNumber){const number=request.match(/第\s*(\d+)\s*(?:页|张|块)|(?:slide|page)\s*(\d+)/i);if(number){const index=Number(number[1]||number[2])-(row.data.options.kind==='slides'?2:1);if(index<0||index>=pages.length)throw failure(400,'该页不存在；Slides 第 1 页为封面，正文从第 2 页开始');selected=pages[index];}else{const role=/方法|流程|method|framework/i.test(request)?'method':/实验|结果|表格|result|table/i.test(request)?'result':null;selected=pages.find(p=>request.includes(p.title))||(role&&pages.find(p=>p.role===role))||pages.find(p=>p.id===row.data.messages?.at(-1)?.pageId)||pages[0];}}
  if(/^(?:撤销(?:上次修改)?|undo)$/i.test(request.trim())&&!body.pageId&&row.data.lastEdit)selected=pages.find(p=>p.id===row.data.lastEdit.pageId);
  if(!selected)throw failure(400,'找不到要修改的页面');
 

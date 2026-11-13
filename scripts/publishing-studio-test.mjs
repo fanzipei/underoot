@@ -9,12 +9,14 @@ import {renderEditorial as legacyRender}from'../skills/underoot-paper-publishing
 import {renderEditorial as v3Render}from'../skills/underoot-paper-publishing/scripts/render-editorial-v3.mjs';
 import {renderEditorial as v5Render}from'../skills/underoot-paper-publishing/scripts/render-editorial-v5.mjs';
 import {publishingStyles}from'../extensions/builtin/underoot.publishing/styles.mjs';
-const BASE=process.env.BASE_URL;let checks=0,calls=0,lastInput,malformed=false,flowReply=false,badSummary=false,holdSummary=false;
+const BASE=process.env.BASE_URL;let checks=0,calls=0,intentCalls=0,lastIntentInput,lastInput,badIntent=false,malformed=false,flowReply=false,badSummary=false,holdSummary=false;
 const check=(name,value)=>{assert.ok(value,name);checks++;console.log('✓',name);};
 async function req(url,cookie='',method='GET',body){const r=await fetch(BASE+url,{method,headers:{cookie,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:r.status,data:await r.json().catch(()=>({})),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
 const owner=(await req('/api/auth/login','','POST',{email:'demo@latex.studio',password:'demo1234'})).cookie;
 const admin=(await req('/api/auth/login','','POST',{email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_PASSWORD})).cookie;
-const mock=http.createServer(async(r,res)=>{let raw='';for await(const b of r)raw+=b;const request=JSON.parse(raw);calls++;const input=JSON.parse(request.messages[1].content);lastInput=input;if(holdSummary&&!input.nodes&&!input.request)await new Promise(r=>setTimeout(r,3800));
+const mock=http.createServer(async(r,res)=>{let raw='';for await(const b of r)raw+=b;const request=JSON.parse(raw);const input=JSON.parse(request.messages[1].content);
+ if(input.task==='slide-intent'){intentCalls++;lastIntentInput=input;const message=input.request,number=message.match(/第\s*(\d+|三)\s*(?:页|张)|(?:slide|page)\s*(\d+)/i),pageNumber=number?(number[1]==='三'?3:Number(number[1]||number[2])):input.selectedPageNumber||null;let action=/删|移除|拿掉|去掉|不再展示/.test(message)&&!/不要删除|第一条|图片|文字|段落/.test(message)?'delete_page':'edit_page';if(/三页和第四页|意思不明确/.test(message)){action='clarify';}res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(badIntent?{action:'delete_page',pageNumber:999}:{action,pageNumber,message:action==='clarify'?'请一次指定一页':'已识别页面操作'})}}]}));return;}
+ calls++;lastInput=input;if(holdSummary&&!input.nodes&&!input.request)await new Promise(r=>setTimeout(r,3800));
  const content=input.request?malformed?{page:{title:'unsafe',takeaway:'x',bullets:[],layout:'visual',figurePath:'../../secret'}}:{explanation:'Shortened the chosen block while retaining its experimental condition.',page:{title:'Measured result under stated conditions',takeaway:'Result 94 under the stated sample.',bullets:['Baseline 91; sample remains restricted.','Please verify uncertainty in source.','Figure~[fig:framework] summarizes SCaDiff.'],layout:'comparison',figurePath:'',...(flowReply?{diagram:{nodes:[{id:'input',label:'Source observations'},{id:'estimate',label:'Evaluated prediction'}],edges:[{from:'input',to:'estimate'}]}}:{})}}:input.nodes?{sections:input.nodes.map((n,i)=>({title:['Research question','Method','Results','Limitations'][i%4],takeaway:n.summary.slice(0,130),bullets:[n.summary.slice(0,160),'Figure~[fig:framework] summarizes SCaDiff.'],sourceIds:n.ids}))}:{summary:(badSummary===true||badSummary==='after-first'&&input.heading==='Bad response')?'x'.repeat(5001):badSummary==='after-first'&&input.heading==='Good source'?'Measured evidence under the stated scope. '.repeat(100).slice(0,3878):input.text?'Result 94 with baseline 91; the restricted sample limits generalization.':'Restricted findings.'};
  res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify(content)}}]}));});
 mock.listen(0,'127.0.0.1');await once(mock,'listening');
@@ -157,13 +159,17 @@ try{
  quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:quickDraft.version,proposalId:quickDraft.proposal.id,accept:true})).data;
  check('chat undo restores the prior TeX without another model call',calls===callsBeforeUndo&&(await req(quickFile,owner)).data.content===quickOriginal);
 
- const deletionCalls=calls,originalIds=quickDraft.pages.map(p=>p.id),deletedId=originalIds[1];
- check('cover removal is rejected without a model call',(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删掉第1页',consent:true})).status===400&&calls===deletionCalls);
+ const deletionCalls=calls,deletionIntentCalls=intentCalls,originalIds=quickDraft.pages.map(p=>p.id),deletedId=originalIds[1];
+ check('cover removal is rejected without a content rewrite',(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删掉第1页',consent:true})).status===400&&calls===deletionCalls);
  quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删掉第3页',consent:true})).data;
- check('delete page command creates a structural proposal without AI',quickDraft.proposal?.action==='delete'&&quickDraft.proposal.pageId===deletedId&&quickDraft.proposal.pageNumber===3&&calls===deletionCalls);
+ check('model-routed delete page command creates a structural proposal without a content rewrite',quickDraft.proposal?.action==='delete'&&quickDraft.proposal.pageId===deletedId&&quickDraft.proposal.pageNumber===3&&calls===deletionCalls);
  quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:quickDraft.version,proposalId:quickDraft.proposal.id,accept:false})).data;
  check('rejecting a deletion preserves the original TeX',(await req(quickFile,owner)).data.content===quickOriginal&&quickDraft.pages.length===originalIds.length);
  quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'请删除第 3 页。',consent:true})).data;
+ check('intent routing uses only visible page titles, not manuscript bodies',intentCalls>deletionIntentCalls&&lastIntentInput.pages.some(p=>p.pageNumber===3)&&!lastIntentInput.page&&!lastIntentInput.evidence&&!lastIntentInput.nodes);
+ quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:quickDraft.version,proposalId:quickDraft.proposal.id,accept:false})).data;
+ quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删除第三页',consent:true})).data;
+ check('Chinese ordinal deletion is routed to the correct visible page',quickDraft.proposal?.action==='delete'&&quickDraft.proposal.pageId===deletedId);
  const deletionVersion=quickDraft.version,deletionProposal=quickDraft.proposal.id;
  quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:deletionVersion,proposalId:deletionProposal,accept:true})).data;
  const deletedText=(await req(quickFile,owner)).data.content,startMark=`% underoot:block:${deletedId}:start`,endMark=`% underoot:block:${deletedId}:end`,from=quickOriginal.indexOf(startMark),to=quickOriginal.indexOf(endMark)+endMark.length;
@@ -173,15 +179,19 @@ try{
  quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'撤销上次修改',consent:true})).data;
  check('undo deletion offers the removed page at its original position',quickDraft.proposal.action==='restore'&&quickDraft.proposal.pageNumber===3);
  quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:quickDraft.version,proposalId:quickDraft.proposal.id,accept:true})).data;
- check('undo deletion restores exact TeX and page order without AI',(await req(quickFile,owner)).data.content===quickOriginal&&JSON.stringify(quickDraft.pages.map(p=>p.id))===JSON.stringify(originalIds)&&calls===deletionCalls);
+ check('undo deletion restores exact TeX and page order without a content rewrite',(await req(quickFile,owner)).data.content===quickOriginal&&JSON.stringify(quickDraft.pages.map(p=>p.id))===JSON.stringify(originalIds)&&calls===deletionCalls);
  quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'把第3页删掉',consent:true})).data;
  quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:quickDraft.version,proposalId:quickDraft.proposal.id,accept:true})).data;
  const afterDelete=(await req(quickFile,owner)).data.content;await req(quickFile,owner,'PUT',{content:afterDelete+'\n% concurrent author edit'});
  check('undo deletion preserves subsequent manual edits',(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'撤销上次修改',consent:true})).status===409&&(await req(quickFile,owner)).data.content===afterDelete+'\n% concurrent author edit');
  await req(quickFile,owner,'PUT',{content:afterDelete});quickDraft=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'撤销上次修改',consent:true})).data;quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:quickDraft.version,proposalId:quickDraft.proposal.id,accept:true})).data;
  check('restoring the unchanged deletion checkpoint enables exact undo',(await req(quickFile,owner)).data.content===quickOriginal&&calls===deletionCalls);
- const edited=quickOriginal.replace(startMark,startMark+'\n% authored edit retained');await req(quickFile,owner,'PUT',{content:edited});
- check('deleting a manually edited frame is blocked',(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删除第3页',consent:true})).status===409&&calls===deletionCalls);
+ const negated=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'不要删除第三页，只精简文字',consent:true})).data;check('negated page deletion remains a content-edit proposal',!negated.proposal.action&&negated.proposal.pageId===deletedId);quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:negated.version,proposalId:negated.proposal.id,accept:false})).data;
+ const part=(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删除第三页的第一条',consent:true})).data;check('deleting an item does not delete its containing slide',!part.proposal.action&&part.proposal.pageId===deletedId);quickDraft=(await req(quickDest+'/decide',owner,'POST',{version:part.version,proposalId:part.proposal.id,accept:false})).data;
+ check('ambiguous multi-page deletion asks for clarification without changing TeX',(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删除第三页和第四页',consent:true})).status===400&&(await req(quickFile,owner)).data.content===quickOriginal);
+ badIntent=true;const beforeBadIntent=intentCalls;check('invalid model operation targets are retried then rejected without edits',(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删除第三页',consent:true})).status===502&&intentCalls-beforeBadIntent===2&&(await req(quickFile,owner)).data.content===quickOriginal);badIntent=false;
+ const protectedDeleteCalls=calls;const edited=quickOriginal.replace(startMark,startMark+'\n% authored edit retained');await req(quickFile,owner,'PUT',{content:edited});
+ check('deleting a manually edited frame is blocked',(await req(quickDest+'/chat',owner,'POST',{version:quickDraft.version,message:'删除第3页',consent:true})).status===409&&calls===protectedDeleteCalls);
  await req(quickFile,owner,'PUT',{content:quickOriginal});
  if((await req('/api/system/engines',owner)).data.engines.some(e=>e.id==='xelatex')){
   const project=(await req('/api/projects',owner,'POST',{name:'Oversized caption safety fixture',template:'blank'})).data.project;
