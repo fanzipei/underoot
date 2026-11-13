@@ -12,21 +12,31 @@ ${t.rows.map(row=>row.map(tex).join(' & ')+'\\\\').join('\n')}
 \\bottomrule\\end{tabularx}${note?'\\par\\smallskip{\\usebeamerfont{caption}'+tex(note)+'}':''}}\\par`;}).join('\n');}
 const references=page=>page.references?.length?'\\par\\medskip{\\small '+page.references.map(r=>tex(r.slideText||r.text)+'\\par\\smallskip\n').join('')+'}':'';
 function picture(page,graphic,notes){const scale=page.figureHeight?Math.max(.45,Math.min(1,page.figureHeight/.50)):1;return String.raw`\sbox{\underootnaturalgraphic}{\includegraphics{`+graphic.path+String.raw`}}
+\setlength{\underootimagewidth}{.56\textwidth}\setlength{\underoottextwidth}{.40\textwidth}
+\sbox{\underootnotebox}{\begin{minipage}{\underoottextwidth}\raggedright `+notes+String.raw`\end{minipage}}
+\ifdim\dimexpr\ht\underootnotebox+\dp\underootnotebox\relax>.50\underootavailable
+\setlength{\underootimagewidth}{.52\textwidth}\setlength{\underoottextwidth}{.44\textwidth}
+\sbox{\underootnotebox}{\begin{minipage}{\underoottextwidth}\raggedright `+notes+String.raw`\end{minipage}}\fi
 \long\def\underootportrait{
-  \begin{columns}[T,onlytextwidth]
-  \begin{column}{.66\textwidth}\centering
-  \includegraphics[width=\linewidth,height=${(.94*scale).toFixed(3)}\underootavailable,keepaspectratio]{`+graphic.path+String.raw`}
+  \begin{columns}[c,onlytextwidth]
+  \begin{column}{\underootimagewidth}\centering
+  \includegraphics[width=\linewidth,height=${(.96*scale).toFixed(3)}\underootavailable,keepaspectratio]{`+graphic.path+String.raw`}
   \end{column}
-  \begin{column}{.30\textwidth}\raggedright `+notes+String.raw`\end{column}
+  \begin{column}{\underoottextwidth}\usebox{\underootnotebox}\end{column}
   \end{columns}}
 \long\def\underootwide{
   \sbox{\underootnotebox}{\begin{minipage}{\linewidth}\raggedright `+notes+String.raw`\end{minipage}}
   \setlength{\underootgraphicheight}{\dimexpr\underootavailable-\ht\underootnotebox-\dp\underootnotebox-10pt\relax}
-  \ifdim\underootgraphicheight>${(.94*scale).toFixed(3)}\underootavailable\setlength{\underootgraphicheight}{${(.94*scale).toFixed(3)}\underootavailable}\fi
+  \ifdim\underootgraphicheight>${(.96*scale).toFixed(3)}\underootavailable\setlength{\underootgraphicheight}{${(.96*scale).toFixed(3)}\underootavailable}\fi
   \ifdim\underootgraphicheight<.45\underootavailable\setlength{\underootgraphicheight}{.45\underootavailable}\fi
   {\centering\includegraphics[width=\linewidth,height=\underootgraphicheight,keepaspectratio]{`+graphic.path+String.raw`}\par}
   \par\smallskip\noindent\usebox{\underootnotebox}}
-\ifdim\wd\underootnaturalgraphic<1.8\ht\underootnaturalgraphic\let\underootdrawing\underootportrait\else\let\underootdrawing\underootwide\fi
+\ifdim\dimexpr\ht\underootnotebox+\dp\underootnotebox\relax>.82\underootavailable
+\setlength{\underootimagewidth}{.48\textwidth}\setlength{\underoottextwidth}{.48\textwidth}
+\sbox{\underootnotebox}{\begin{minipage}{\underoottextwidth}\raggedright `+notes+String.raw`\end{minipage}}\fi
+\let\underootdrawing\underootwide\def\underootmode{stacked}
+\ifdim\wd\underootnaturalgraphic<1.8\ht\underootnaturalgraphic\ifdim\dimexpr\ht\underootnotebox+\dp\underootnotebox\relax<.95\underootavailable\let\underootdrawing\underootportrait\def\underootmode{side}\fi\fi
+\typeout{UNDEROOT:COMPOSITION:`+page.id+String.raw`:\underootmode:\the\underoottextwidth:\the\textwidth}
 \underootdrawing`;}
 
 /** Use the chosen Beamer theme's native fonts, title page, colors and spacing. */
@@ -41,19 +51,19 @@ export function renderNativeSlides(info,options,style,story,identity){
   const prose=lead+key+points(page)+equations(page)+tables(page)+renderDiagram(page.diagram,tex,true)+references(page);
   const visual=page.figures[0];
   let body=prose;
-  if(visual)body=picture(page,visual,lead+key+points(page)+references(page));
-  else if(page.layout==='comparison'&&page.bullets.length>=2){const cut=Math.ceil(page.bullets.length/2);body=key+'\\begin{columns}[T,onlytextwidth]'+[page.bullets.slice(0,cut),page.bullets.slice(cut)].map(b=>'\\begin{column}{.47\\textwidth}'+points({...page,takeaway:'',bullets:b})+'\\end{column}').join('')+'\\end{columns}'+equations(page)+tables(page)+renderDiagram(page.diagram,tex,true);}
+  if(visual)body=picture(page,visual,lead+(page.takeaway?tex(page.takeaway)+'\\par\\medskip':'')+points(page)+references(page));
+  else if(page.layout==='comparison'&&page.bullets.length>=2){const cut=Math.ceil(page.bullets.length/2);body=key+'\\begin{columns}[c,onlytextwidth]'+[page.bullets.slice(0,cut),page.bullets.slice(cut)].map(b=>'\\begin{column}{.47\\textwidth}'+points({...page,takeaway:'',bullets:b})+'\\end{column}').join('')+'\\end{columns}'+equations(page)+tables(page)+renderDiagram(page.diagram,tex,true);}
   return`% underoot:block:${page.id}:start
 \\def\\underootframetitle{${tex(page.title)}}
 \\sbox{\\underootframetitlebox}{\\usebeamerfont{frametitle}\\underootframetitle}
 \\ifdim\\wd\\underootframetitlebox>.92\\textwidth\\def\\underootframetitle{${tex(({question:'Research question',gap:'Related work',method:'Method',result:'Results',limitation:'Limitations',conclusion:'Take-home message'})[page.role]||'Research evidence')}}\\sbox{\\underootframetitlebox}{\\usebeamerfont{frametitle}\\underootframetitle}\\fi
 \\typeout{UNDEROOT:TITLE:${page.id}:\\the\\wd\\underootframetitlebox:\\the\\textwidth}
-\\begin{frame}[t]{\\underootframetitle}
-\\setlength{\\underootavailable}{\\dimexpr\\textheight-3\\baselineskip\\relax}
+\\begin{frame}[c]{\\underootframetitle}
+\\setlength{\\underootavailable}{\\dimexpr\\textheight-2\\baselineskip\\relax}
 \\begin{lrbox}{\\underootslidebox}\\begin{minipage}{\\textwidth}
 ${body}
 \\end{minipage}\\end{lrbox}
-\\typeout{UNDEROOT:SLIDE:${page.id}:\\the\\dimexpr\\ht\\underootslidebox+\\dp\\underootslidebox\\relax:\\the\\dimexpr\\textheight-3\\baselineskip\\relax}
+\\typeout{UNDEROOT:SLIDE:${page.id}:\\the\\dimexpr\\ht\\underootslidebox+\\dp\\underootslidebox\\relax:\\the\\dimexpr\\textheight-2\\baselineskip\\relax}
 \\usebox{\\underootslidebox}
 \\end{frame}
 % underoot:block:${page.id}:end`;
@@ -78,6 +88,8 @@ ${palette}
 \\newsavebox{\\underootnotebox}
 \\newlength{\\underootavailable}
 \\newlength{\\underootgraphicheight}
+\\newlength{\\underootimagewidth}
+\\newlength{\\underoottextwidth}
 \\def\\underootcovertitle{${tex(coverTitle)}}
 \\sbox{\\underootframetitlebox}{\\usebeamerfont{title}\\underootcovertitle}
 \\ifdim\\wd\\underootframetitlebox>.92\\textwidth\\def\\underootcovertitle{Research talk}\\fi

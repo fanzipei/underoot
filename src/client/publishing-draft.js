@@ -7,7 +7,7 @@ export async function openPublishingDraft(project,id,{notice}={}){
  root.classList.add('publication-chat-drawer');const q=s=>root.querySelector(s),status=t=>q('[data-status]').textContent=t;
  const say=(role,text)=>{const el=document.createElement('div');el.className='publication-chat-turn '+role;el.innerHTML=`<b>${role==='user'?'你':'助手'}</b><p>${e(text).replace(/\n/g,'<br>')}</p>`;q('.publication-conversation').append(el);el.scrollIntoView({block:'nearest'});};
  say('assistant',draft.projectId?'已生成。可以直接说“第 3 页精简成两点”“删掉第3页”“把方法页换成流程图”或“把实验结果表加入结果页”；发送“精简为18页”可整理整套报告。Slides 第 1 页为封面，正文从第 2 页开始。':'已保留内部草稿。发送“继续生成”即可完成，或先描述需要修改的内容。');
- if(draft.projectId&&draft.rendererVersion<7)say('assistant','这是旧版生成项目。发送“重新排版”可保留原主题并升级排版；发送“风格：metropolis”可切换原生主题；已有手工修改受保护。');
+ if(draft.projectId&&draft.rendererVersion<8)say('assistant','这是旧版生成项目。发送“重新排版”可保留原主题并升级排版；发送“风格：metropolis”可切换原生主题；已有手工修改受保护。');
  if(notice)say('assistant',notice+' 可以直接在这里描述修改，再发送“继续生成”。');
  for(const message of draft.messages.slice(-8))say(message.role,message.content);
  async function job(body){const start=await api.post(base+'/jobs',{...body,draftId:id,version:draft.version,confirmed:true});let result=start;while(['queued','running'].includes(result.status)){status(result.progress.message);await new Promise(r=>setTimeout(r,1000));result=await api.get(base+'/jobs/'+start.id);}if(result.status!=='complete')throw Error(result.error||'操作未完成');draft=result.result.draft;attachDerived();return result;}
