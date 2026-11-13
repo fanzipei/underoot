@@ -536,3 +536,5 @@ Slides 默认采用 [Metropolis](https://ctan.org/pkg/beamertheme-metropolis)，
 服务器需要 TeX Live 包 `beamertheme-metropolis`、`fira`、`pgfopts`（例如 `tlmgr install beamertheme-metropolis fira pgfopts`）。Linux 上还需让 fontconfig 能发现 Fira 的 OpenType 字体（安装到用户字体目录后运行 `fc-cache -f`）。使用 XeLaTeX 支持中文；缺少主题时会保留项目并报告编译错误，不静默换用其他样式。
 
 原生主题集成与验证记录：[0.10.1 review](docs/publishing-v0101-native-theme.md)。
+
+图表页会自动附上对应原文的简短发现/结论，优先用正文中明确讨论该图表的语句；AI 在原有叙事调用中压缩，保留条件和来源，不根据图片臆测趋势。旧 Slides 可在聊天中输入 `补充图表结论`，仅填充能从保存原稿可靠抽取、且尚未写有结论的页面；不重新生成整个项目。原稿没有可靠短句时保留空缺，不捏造结果。

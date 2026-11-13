@@ -13,3 +13,11 @@ The native renderer is version 6. Version 5 is frozen to preserve comparisons ag
 Validation: pure publishing/editorial/layout/evidence checks; five actual layout PDFs (Metropolis, default, Berkeley and two poster styles); a private long-paper Metropolis deck (53 pages including comparison supplements) passed compilation and bounds checks. Its title, prose, table and figure pages were rendered and inspected. This validates template integration and layout, not AI editorial quality. No paid AI evaluation was performed.
 
 A separate Chinese title/author fixture also passed XeLaTeX/PDF checks (17 pages), preserving Fandol glyphs alongside the native theme fonts.
+
+## Asset-specific findings
+
+Following the author's request, figure/table pages pair the evidence with a brief original-source finding, comparison conclusion or innovation support. Label-linked prose and up to two following sentences in the same paragraph are candidates; floats/captions are excluded, other asset references end the context, duplicate text is removed, conditions are not clipped. The existing AI narrative call may supply a bounded `assetInsights` record with an existing asset and intersecting source IDs. No per-page paid calls are added. Native typography places the message above a table or below a full-width figure without a rigid finding box.
+
+Chat `补充图表结论` fills only blank evidence pages from the saved source, retains authored copy and creates a before/after version through guarded reflow. Tests cover explicit source binding, unrelated-asset rejection, intact qualifiers, no extra narrative calls and preservation of existing conclusions. A local-extraction manuscript draft still has some evidence-only pages: adjacent source text is not always a short defensible conclusion. Configured AI may condense longer discussion; neither source-ID validation nor a bounds check certifies the scientific truth of generated copy.
+
+Final regression results: 39 publishing unit, 33 editorial, 15 fit, 36 standalone and 29 evidence assertions; five native layout cases and 113 publishing-studio assertions passed, including upgrading v5 output and explicitly enriching its previously empty table conclusion. Full integration covers all seventeen built-in styles. The private source was read-only throughout, and deployment does not rewrite existing generated projects.

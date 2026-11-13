@@ -24,7 +24,7 @@ try{
  const base=`/api/workspace/projects/${project.id}/derive`;
  let main='\\documentclass{article}\n\\title{Bounded research communication}\n\\author{Test author}\n\\begin{document}\n\\section{Research question}\nWhat changes under a restricted sample?\n\\section{Method}\nWe compare two methods on the same sample.\n\\section{Results}\nMeasured result 94 with baseline 91.\n\\section{Limitations}\nThe sample is restricted; uncertainty is not estimated.\n\\end{document}';
  main=main.replace('\\author{Test author}\n','').replace('\\begin{document}','\\begin{document}\n\\author{Source Alice}\\affiliation{\\institution{Source University}}\n\\author{Source Bob}\\affiliation{\\institution{Source Lab}}\n\\maketitle');
- main=main.replace('\\end{document}',String.raw`\begin{table}\caption{Measured comparison.}\begin{tabular}{lr}Method & Score \\ Baseline & 91 \\ Proposed & 94 \\ \end{tabular}\end{table}\end{document}`);
+ main=main.replace('\\end{document}',String.raw`\begin{table}\caption{Measured comparison.}\label{tab:studio}\begin{tabular}{lr}Method & Score \\ Baseline & 91 \\ Proposed & 94 \\ \end{tabular}\end{table} Table~\ref{tab:studio} shows a higher score for the proposed method on the same restricted sample.\end{document}`);
  await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:main});
  const plan=(await req(base+'/plan',owner)).data;
  const projectCount=()=>req('/api/projects',owner).then(r=>r.data.projects.length);
@@ -34,7 +34,7 @@ try{
  async function wait(id,endpoint=base){for(let i=0;i<1200;i++){const j=(await req(endpoint+'/jobs/'+id,owner)).data;if(['complete','failed','cancelled'].includes(j.status))return j;await new Promise(r=>setTimeout(r,100));}throw Error('Timeout');}
  const job=await wait(start.data.id);if(job.status!=='complete')console.error(job);
  let draft=job.result?.draft;check(kind+' AI creates editable outline before project',draft?.pages.length>0&&!draft.projectId&&await projectCount()===before);
- check(kind+' table-only evidence retained in editable outline',draft.pages.some(p=>p.tables?.length&&(kind==='poster'||(!p.bullets.length&&!p.takeaway))));
+ check(kind+' table evidence retains a brief source-grounded conclusion',draft.pages.some(p=>p.tables?.length&&(kind==='poster'||(!p.bullets.length&&p.takeaway.includes('same restricted sample')))));
  check(kind+' whole-paper AI called only at outline stage',calls-beforeCalls===plan.modelCalls);
  const url=base+'/drafts/'+draft.id;
  check(kind+' title block authors populate without manual input',draft.identity.authors.includes('Source Alice')&&draft.identity.authors.includes('Source Bob')&&draft.identity.affiliations.includes('Source Lab'));
@@ -68,10 +68,11 @@ try{
  check(kind+' generated identity contains all authors and units',['Alice Example','Bob Example','Example University','Example Institute'].every(s=>original.includes(s)));
  const qr=await fetch(BASE+`/api/projects/${derived}/raw?path=${encodeURIComponent(draft.identity.qrPath)}`,{headers:{cookie:owner}});const qrBytes=Buffer.from(await qr.arrayBuffer());check(kind+' QR is generated locally as a real PNG',qr.status===200&&qrBytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])));
  if(kind==='slides'){
-  const prior=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const saved=JSON.parse(prior.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);saved.rendererVersion=5;
+  const prior=new DatabaseSync(path.join(process.env.LATEXSTUDIO_DATA,'app.db'));const saved=JSON.parse(prior.prepare('SELECT payload FROM publishing_sessions WHERE id=?').get(draft.id).payload);saved.rendererVersion=5;for(const page of saved.editorial.pages)if(page.tables?.length)page.takeaway='';
   const oldTex=v5Render({...saved.plan,editorial:saved.editorial},saved.options,publishingStyles.slides.find(s=>s.id===saved.options.style));prior.prepare('UPDATE publishing_sessions SET payload=? WHERE id=?').run(JSON.stringify(saved),draft.id);prior.close();await req(file,owner,'PUT',{content:oldTex});
-  const upgraded=await req(`/api/workspace/projects/${derived}/derive/jobs`,owner,'POST',{phase:'reflow',draftId:draft.id,version:draft.version,confirmed:true,identity,style:'metropolis'});const native=await wait(upgraded.data.id,`/api/workspace/projects/${derived}/derive`);
+  const upgraded=await req(`/api/workspace/projects/${derived}/derive/jobs`,owner,'POST',{phase:'reflow',draftId:draft.id,version:draft.version,confirmed:true,identity,style:'metropolis',withFindings:true});const native=await wait(upgraded.data.id,`/api/workspace/projects/${derived}/derive`);
   check('v5 output upgrades to native theme without a false manual-edit conflict',native.status==='complete');draft=native.result.draft;original=(await req(file,owner)).data.content;
+  check('explicit enrichment recovers a source-grounded table conclusion',draft.pages.some(p=>p.tables?.length&&p.takeaway.includes('same restricted sample')));
   check('native upgrade retains content and removes absolute font overrides',draft.pages.some(p=>p.title==='A user-reviewed research question')&&original.includes('\\usetheme{metropolis}')&&!original.includes('\\fontsize'));
  }
  // Recreate the v0.8 session format to exercise upgrade/reflow of existing outputs.

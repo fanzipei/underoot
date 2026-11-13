@@ -1,4 +1,5 @@
 import{summarizePaper}from'../skills/underoot-paper-publishing/scripts/summarize.mjs';
+import{assetFindings,assetInsight,enrichEvidencePages}from'../skills/underoot-paper-publishing/scripts/asset-findings.mjs';
 import assert from'node:assert/strict';import{portableTable,tablePanels,posterResultTable,presentationTables}from'../skills/underoot-paper-publishing/scripts/portable-table.mjs';import{validateDiagram,renderDiagram}from'../skills/underoot-paper-publishing/scripts/vector-diagram.mjs';import{editorialPlan}from'../skills/underoot-paper-publishing/scripts/editorial-plan.mjs';import{renderPublication}from'../skills/underoot-paper-publishing/scripts/styles.mjs';
 let count=0;const check=(n,v)=>{assert.ok(v,n);count++;console.log('✓',n);};
 const parsed=portableTable(String.raw`\begin{table}\begin{tabular}{@{}lrrrrr@{}}\toprule Method & \multicolumn{2}{c}{Tokyo} & \multicolumn{3}{c}{Osaka} \\ \cmidrule(lr){2-3} & $\mathrm{MAE}\downarrow$ & RMSE & MAE & RMSE & Time \\ Baseline & $80.2\pm0.3$ & 4 & 5 & 6 & 7 \\ Ours & 87.1 & 3 & 4 & 5 & 6 \\ \bottomrule\end{tabular}\end{table}`);
@@ -27,4 +28,22 @@ const primary=presentationTables(ranked)[0];check('main comparison includes stro
 const transfer={id:'transfer',caption:'Zero-shot transfer MAE',headers:['Transfer','Weak','Strong','Ours'],rows:[['A → A','1','2','1'],['B → B','1','2','1'],['A → B','12','5','4'],['B → A','14','6','5'],['Avg','13','5.5','4.5'],['C → D','16','7','6'],['D → C','18','8','7']]};const transferPanels=presentationTables(transfer);
 check('transfer summary includes off-diagonal tasks and source average',transferPanels[0].rows.some(r=>r[0]==='A → B')&&transferPanels[0].rows.some(r=>r[0]==='Avg')&&!transferPanels[0].rows.some(r=>r[0]==='A → A'));
 check('complete supplement preserves unselected source rows and values',transfer.rows.every(r=>r.every(v=>transferPanels.slice(1).some(p=>p.rows.some(row=>row[0]===r[0]&&row.includes(v))))));
+const discussion=String.raw`As shown in Figure~\ref{fig:sparse}, sparse selection improves accuracy under the fixed budget.
+
+Table~\ref{tab:errors} shows lower error on the two evaluated datasets.
+
+Figure~\ref{fig:other} shows an unrelated result.`;
+const grounded=assetFindings(discussion,'fig:sparse',[{id:'c0001',from:0,to:discussion.length}]);
+check('figure finding comes from its explicit source reference and keeps conditions',grounded.length===1&&grounded[0].text==='sparse selection improves accuracy under the fixed budget.'&&grounded[0].sourceIds[0]==='c0001');
+check('table conclusions are independent of manuscript numbering',assetFindings(discussion,'tab:errors',[])[0].text==='This evidence shows lower error on the two evaluated datasets.');
+check('unlabelled evidence cannot borrow an unrelated conclusion',assetFindings(discussion,'missing',[]).length===0&&!assetInsight({path:'unknown.png'},summary,{figurePaths:[],takeaway:'Generic improvement',explicitTakeaway:true}));
+const paired=editorialPlan({...plan,visuals:plan.visuals.map((v,i)=>({...v,findings:i?[]:grounded}))},summary,options);const evidencePage=paired.pages.find(p=>p.figures[0]?.path==='framework.png');
+const pairedTex=renderPublication({...plan,editorial:paired},options);
+check('figure-led page carries a brief grounded finding alongside its visual',evidencePage.evidencePage&&evidencePage.takeaway===grounded[0].text&&pairedTex.includes(grounded[0].text));
+const enrich={pages:[{id:'blank',takeaway:'',bullets:[],sourceIds:['c0001'],figures:[{path:'framework.png'}]},{id:'authored',takeaway:'Keep my authored point.',bullets:[],sourceIds:['c0001'],figures:[{path:'framework.png'}]}]};
+check('bulk enrichment keeps authored copy and fills only grounded blank evidence',enrichEvidencePages(enrich,{visuals:[{path:'framework.png',findings:grounded}]})===1&&enrich.pages[0].takeaway===grounded[0].text&&enrich.pages[1].takeaway==='Keep my authored point.');
+const insightPlan={...repeated,visuals:[{path:'specific.png',sourceIds:['c0001']}]};const insightModel=sourceId=>async(_instruction,input)=>JSON.stringify(input.nodes?{sections:[{title:'Measured finding',text:'Measured finding under the stated condition.',sourceIds:['c0001','c0002']}],assetInsights:[{figurePath:'specific.png',text:'Measured finding under the stated condition.',sourceIds:[sourceId]}]}:{summary:'Measured finding under the stated condition.'});
+const specific=await summarizePaper(insightPlan,{kind:'slides',count:2},{useAI:true,model:insightModel('c0001')});
+check('AI asset insight reuses the narrative call and retains source provenance',specific.assetInsights[0].sourceIds[0]==='c0001'&&specific.modelCalls===2);
+await assert.rejects(summarizePaper(insightPlan,{kind:'slides',count:2},{useAI:true,model:insightModel('c0002')}),{status:502});check('AI conclusion cannot cite an unrelated asset source',true);
 console.log(`Publishing evidence: ${count}/${count} passed`);

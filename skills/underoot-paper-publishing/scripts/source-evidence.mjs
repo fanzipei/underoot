@@ -1,3 +1,4 @@
+import{assetFindings}from'./asset-findings.mjs';
 import{portableTable}from'./portable-table.mjs';
 import {plainText}from'./chunk-paper.mjs';
 const captionText=v=>plainText(v.replace(/\\pm\b/g,' ± ').replace(/\\downarrow\b/g,' ↓ ').replace(/\\uparrow\b/g,' ↑ ').replace(/\$([^$]*)\$/g,(whole,math)=>/\\(?:frac|sum|prod|int)\b/.test(math)?whole:math)).replace(/_\s*(?=±)/g,' ');
@@ -16,7 +17,7 @@ export function sourceEvidence(source,chunks,figures=[]){
   for(const image of match[0].matchAll(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g)){
    const request=image[1].replace(/^\.\//,'');const exact=figures.find(f=>f===request||f.replace(/\.[^.]+$/,'')===request||f.endsWith('/'+request));
    const basename=figures.filter(f=>f.split('/').pop().replace(/\.[^.]+$/,'')===request.split('/').pop().replace(/\.[^.]+$/,''));const found=exact||(basename.length===1?basename[0]:null);
-   if(found&&!visuals.some(v=>v.path===found))visuals.push({path:found,caption,label,sourceIds:ids(match.index,match.index+match[0].length)});
+   if(found&&!visuals.some(v=>v.path===found))visuals.push({path:found,caption,label,findings:assetFindings(source,label,chunks),sourceIds:ids(match.index,match.index+match[0].length)});
   }
  }
  // Inline graphics without a figure environment still carry their exact source range.
@@ -36,7 +37,7 @@ export function sourceEvidence(source,chunks,figures=[]){
  const tables=[];let portableCount=0;
  for(const match of source.matchAll(/\\begin\{table\*?\}(?:\[[^\]]*\])?[\s\S]*?\\end\{table\*?\}/g)){
   const parsed=portableTable(match[0],source);if(!parsed)continue;portableCount++;
-  const caption=captionText(argument(match[0],'caption')?.value||'');const same=tables.find(t=>JSON.stringify([t.caption,t.headers,t.rows])===JSON.stringify([caption,parsed.headers,parsed.rows]));if(same)same.sourceIds=[...new Set([...same.sourceIds,...ids(match.index,match.index+match[0].length)])];else tables.push({id:'table-'+(tables.length+1),caption,...parsed,sourceIds:ids(match.index,match.index+match[0].length)});
+  const caption=captionText(argument(match[0],'caption')?.value||'');const same=tables.find(t=>JSON.stringify([t.caption,t.headers,t.rows])===JSON.stringify([caption,parsed.headers,parsed.rows]));if(same)same.sourceIds=[...new Set([...same.sourceIds,...ids(match.index,match.index+match[0].length)])];else tables.push({id:'table-'+(tables.length+1),caption,label:argument(match[0],'label')?.value||'',findings:assetFindings(source,argument(match[0],'label')?.value||'',chunks),...parsed,sourceIds:ids(match.index,match.index+match[0].length)});
  }
  // Expand only explicitly defined dataset abbreviations, never guess a legend.
  const definitions=new Map(),ambiguous=new Set();for(const t of tables)for(const m of t.caption.matchAll(/((?:[A-Z]{2,5}(?:,|\s|and)+){1,7}[A-Z]{2,5})\s+(?:denote|refer to|stand for)\s+(.+?),\s*respectively\./g)){const codes=m[1].match(/\b[A-Z]{2,5}\b/g)||[],names=m[2].split(/,\s*(?:and\s+)?/);if(codes.length!==names.length)continue;codes.forEach((c,i)=>{if(definitions.has(c)&&definitions.get(c)!==names[i])ambiguous.add(c);definitions.set(c,names[i]);});}

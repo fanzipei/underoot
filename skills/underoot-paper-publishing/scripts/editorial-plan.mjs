@@ -1,3 +1,4 @@
+import{assetInsight}from'./asset-findings.mjs';
 import{tablePanels,posterResultTable,presentationTables}from'./portable-table.mjs';
 import{validateDiagram}from'./vector-diagram.mjs';
 /** Source-linked editorial and layout passes, shared by the skill and host. */
@@ -95,8 +96,8 @@ export function editorialPlan(plan,summary,options){
   if(!groups.length)groups.push([]);
   for(let i=0;i<groups.length;i++)pages.push({...card,id:card.id+'-'+(i+1),title:card.title,bullets:groups[i],takeaway:i?'':card.explicitTakeaway?card.takeaway:[...groups[i]].sort((a,b)=>rank(b)-rank(a))[0]||'',figures:options.kind==='poster'&&i===0?card.figures.slice(0,1):[],equations:i===0?card.equations:[],diagram:i===0&&!card.figures.length?card.diagram:null,tables:options.kind==='poster'&&i===0?card.tables.slice(0,1).flatMap(t=>tablePanels(posterResultTable(t,plan.title),'poster')).slice(0,1):[]});
   // A source with several figures gets source-captioned visual pages, not a blind appendix.
-  if(options.kind==='slides')for(const visual of card.figures){const heading=sentences(visual.caption)[0]||'';pages.push({...card,id:card.id+'-figure-'+pages.length,title:heading.length<=90&&heading?heading:(chinese?'原稿图示':'Source visual evidence'),bullets:[],takeaway:'',figures:[visual],equations:[],tables:[]});}
-  if(options.kind==='slides')for(const table of card.tables.filter(t=>card.tableIds?.includes(t.id)||t.rows.some(row=>row.slice(1).some(v=>/\d/.test(v)))).flatMap(t=>presentationTables(t,plan.title)))pages.push({...card,id:card.id+'-table-'+pages.length,appendix:!!table.appendix,title:card.title+(chinese?' · 表格证据':' · evidence table'),bullets:[],takeaway:'',figures:[],equations:[],tables:[table]});
+  if(options.kind==='slides')for(const visual of card.figures){const first=sentences(visual.caption)[0]||'',heading=first.length<=90?first:first.split(/[:：;]/)[0],insight=assetInsight(visual,summary,card);pages.push({...card,id:card.id+'-figure-'+pages.length,title:heading.length<=90&&heading?heading:(chinese?'原稿图示':'Source visual evidence'),bullets:[],takeaway:insight?.text||'',evidencePage:true,insightSourceIds:insight?.sourceIds||[],sourceIds:unique([...card.sourceIds,...(insight?.sourceIds||[])]),figures:[visual],equations:[],tables:[]});}
+  if(options.kind==='slides')for(const table of card.tables.filter(t=>card.tableIds?.includes(t.id)||t.rows.some(row=>row.slice(1).some(v=>/\d/.test(v)))).flatMap(t=>presentationTables(t,plan.title))){const insight=assetInsight(card.tables.find(t=>table.id.startsWith(t.id+'-'))||table,summary,card);pages.push({...card,id:card.id+'-table-'+pages.length,appendix:!!table.appendix,title:card.title+(chinese?' · 表格证据':' · evidence table'),bullets:[],takeaway:insight?.text||'',evidencePage:true,insightSourceIds:insight?.sourceIds||[],sourceIds:unique([...card.sourceIds,...(insight?.sourceIds||[])]),figures:[],equations:[],tables:[table]});}
  }
  pages.sort((a,b)=>Number(!!a.appendix)-Number(!!b.appendix)||(!summary.aiNarrative&&options.kind==='slides'?['question','gap','method','result','detail','limitation','conclusion'].indexOf(a.role)-['question','gap','method','result','detail','limitation','conclusion'].indexOf(b.role):0));
  let displayed=pages;
@@ -141,7 +142,7 @@ export function editorialPlan(plan,summary,options){
  if(missing.length||invalid.length||!displayed.length)throw Object.assign(Error('发布提纲的来源覆盖无效，原稿保留'),{status:502});
  const dense=displayed.filter(p=>p.bullets.some(b=>weight(b)>textLimit));
  const sourceNumbers=new Set((plan.chunks.map(c=>c.text||'').join(' ').match(/\d+(?:\.\d+)?/g)||[]));
- const unverified=unique(displayed.flatMap(p=>(p.title+' '+p.bullets.join(' ')).match(/\d+(?:\.\d+)?/g)||[])).filter(n=>!sourceNumbers.has(n));
+ const unverified=unique(displayed.flatMap(p=>(p.title+' '+(p.takeaway||'')+' '+p.bullets.join(' ')).match(/\d+(?:\.\d+)?/g)||[])).filter(n=>!sourceNumbers.has(n));
  if(unverified.length)warnings.push('显示内容中存在未能按原值匹配到源码的数字，需核验单位/换算或删除无依据主张：'+unverified.join('、'));
  if(dense.length)warnings.push(`${dense.length} 个内容块含不能安全拆分的长句，请人工压缩；原句保留，未截断限定条件。`);
  rounds.push({round:5,name:'事实、可读性与交付复核',changes:['核对来源 ID、原值数字和完整分块笔记','列出未解决项；真实编译/视觉检查另行记录，不以预检冒充'],metrics:{coverage:covered.size,displayedSources:displayedSources.size,total:known.size,denseBlocks:dense.length,unverifiedNumbers:unverified}});

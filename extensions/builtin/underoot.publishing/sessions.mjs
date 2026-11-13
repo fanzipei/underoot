@@ -1,4 +1,5 @@
 import{sourceEvidence}from'../../../skills/underoot-paper-publishing/scripts/source-evidence.mjs';
+import{enrichEvidencePages}from'../../../skills/underoot-paper-publishing/scripts/asset-findings.mjs';
 import{tablePanels,presentationTables}from'../../../skills/underoot-paper-publishing/scripts/portable-table.mjs';
 import{validateDiagram}from'../../../skills/underoot-paper-publishing/scripts/vector-diagram.mjs';
 import crypto from 'node:crypto';
@@ -171,6 +172,12 @@ export async function reflowSession(project,user,id,body,runtime={}){
   if(current.content!==renderSession(row.data))throw failure(409,'生成的 TeX 已有手工修改，自动重排已停止；请先保留或合并这些编辑');
   if(d.evidenceVersion!==5){const fresh=sourceEvidence(d.plan.chunks.map(c=>c.text||'').join(''),d.plan.chunks,d.plan.figures||d.plan.visuals?.map(v=>v.path)||[]),existing=d.plan.tables||[];d.plan.tables=[...existing,...fresh.tables.filter(t=>!existing.some(old=>JSON.stringify([old.headers,old.rows])===JSON.stringify([t.headers,t.rows]))).map(t=>({...t,id:'source-v5-'+t.id}))];d.evidenceVersion=5;}
   if(body.style||body.orientation||body.ratio||body.columns)d.options=publishingOptions({...d.options,...Object.fromEntries(['style','orientation','ratio','columns'].filter(k=>body[k]!==undefined).map(k=>[k,body[k]]))},listCustomTemplates(user));
+  if(body.withFindings&&d.options.kind==='slides'){
+   const fresh=sourceEvidence(d.plan.chunks.map(c=>c.text||'').join('\n'),d.plan.chunks,d.plan.figures||d.plan.visuals?.map(v=>v.path)||[]);
+   d.plan.visuals=(d.plan.visuals||[]).map(v=>({...v,findings:fresh.visuals.find(f=>f.path===v.path)?.findings||v.findings||[]}));
+   d.plan.tables=(d.plan.tables||[]).map(t=>({...t,findings:fresh.tables.find(f=>JSON.stringify([f.caption,f.headers,f.rows])===JSON.stringify([t.caption,t.headers,t.rows]))?.findings||t.findings||[]}));
+   const added=enrichEvidencePages(d.editorial,d.plan);d.editorial.warnings.push(`从保存的原稿为 ${added} 个图表页补充了简短说明；已填写的结论保留，未找到可靠短句的页面未补造结论。`);
+  }
   d.editorial.identity=validateIdentity(body.identity,assetsFor(row),identityFor(d));delete d.pendingIdentity;d.identityReviewed=true;d.rendererVersion=6;d.editorial=standaloneEditorial(d.editorial);d.editorial.identity=identityFor(d);
   const revision=snapshot(project.id,user,'自动重排前保留当前版式','publishing',true);fs.mkdirSync(dir,{recursive:true});materialize(revision,dir);
   await materializeBranding(dir,d.editorial.identity,d.uploadedAssets||[]);check();

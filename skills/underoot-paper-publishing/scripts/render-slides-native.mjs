@@ -9,7 +9,7 @@ const equations=page=>(page.equations||[]).map(e=>'\\[ '+e.tex+' \\]').join('\n'
 function tables(page){return(page.tables||[]).map(t=>{const ids=t.identifierColumns||1;const spec=t.headers.map((_,i)=>i<ids?`>{\\raggedright\\arraybackslash}p{${ids===2?'.28':'.34'}\\linewidth}`:'X').join('');return`\\par\\medskip{\\small\\begin{tabularx}{\\linewidth}{@{}${spec}@{}}\\toprule
 ${t.headers.map(h=>'\\textbf{'+tex(h)+'}').join(' & ')}\\\\\\midrule
 ${t.rows.map(row=>row.map(tex).join(' & ')+'\\\\').join('\n')}
-\\bottomrule\\end{tabularx}\\par\\smallskip{\\usebeamerfont{caption}${caption(t,page.title)}}}\\par`;}).join('\n');}
+\\bottomrule\\end{tabularx}\\par\\smallskip{\\usebeamerfont{caption}${t.selection?'Selected comparison. ':''}${caption(t,page.title)}}}\\par`;}).join('\n');}
 
 /** Use the chosen Beamer theme's native fonts, title page, colors and spacing. */
 export function renderNativeSlides(info,options,style,story,identity){
@@ -20,7 +20,7 @@ export function renderNativeSlides(info,options,style,story,identity){
   const prose=key+points(page)+equations(page)+tables(page)+renderDiagram(page.diagram,tex,true);
   const visual=page.figures[0],graphic=visual?`\\centering\\includegraphics[width=\\linewidth,height=${page.figureHeight||.50}\\textheight,keepaspectratio]{${visual.path}}\\par\\smallskip{\\usebeamerfont{caption}${caption(visual,page.title)}}`:'';
   let body=prose;
-  if(visual&&!page.bullets.length&&!page.takeaway)body=graphic;
+  if(visual&&(page.evidencePage||!page.bullets.length&&!page.takeaway))body=graphic+(page.takeaway?'\\par\\medskip\\raggedright '+key:'');
   else if(visual)body=`\\begin{columns}[T,onlytextwidth]\\begin{column}{.47\\textwidth}${prose}\\end{column}\\begin{column}{.49\\textwidth}${graphic}\\end{column}\\end{columns}`;
   else if(page.layout==='comparison'&&page.bullets.length>=2){const cut=Math.ceil(page.bullets.length/2);body=key+'\\begin{columns}[T,onlytextwidth]'+[page.bullets.slice(0,cut),page.bullets.slice(cut)].map(b=>'\\begin{column}{.47\\textwidth}'+points({...page,takeaway:'',bullets:b})+'\\end{column}').join('')+'\\end{columns}'+equations(page)+tables(page)+renderDiagram(page.diagram,tex,true);}
   return`% underoot:block:${page.id}:start
