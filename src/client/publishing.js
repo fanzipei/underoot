@@ -33,13 +33,13 @@ export async function openPublishing(project,kind='slides'){
   for(const li of view.root.querySelectorAll('[data-step]')){const i=Number(li.dataset.step);li.classList.toggle('done',job?.status==='complete'||i<idx);li.classList.toggle('current',running&&i===idx);li.classList.toggle('failed',terminal&&job.status!=='complete'&&i===idx);li.querySelector('span').textContent=job?.status==='complete'||i<idx?'✓':String(i+1);}
   const p=job?.progress||{},quantified=running&&['chunks','reduce'].includes(p.phase)&&p.total>0;
   q('[data-chunks]').hidden=!quantified;if(quantified){q('[data-chunks]').max=p.total;q('[data-chunks]').value=Math.min(p.completed||0,p.total);}
-  const counts=[];if(p.repairAttempt)counts.push(`当前步骤自动修正 ${p.repairAttempt}/2`);if(quantified)counts.push(`当前阶段已完成 ${p.completed||0} / ${p.total}`);if(job?.useAI)counts.push(`模型已请求 ${p.modelCalls||0} 次${job.maxModelCalls?' / 上限 '+job.maxModelCalls+' 次':''}`);if(p.layoutRound&&phaseIndex(p.phase)===3)counts.push(`排版检查第 ${p.layoutRound} 轮`);q('[data-count]').textContent=counts.join(' · ');
+  const counts=[];if(p.repairAttempt)counts.push(`${p.retryKind==='transport'?'请求重试':'当前步骤自动修正'} ${p.repairAttempt}/2`);if(quantified)counts.push(`当前阶段已完成 ${p.completed||0} / ${p.total}`);if(job?.useAI)counts.push(`模型已请求 ${p.modelCalls||0} 次${job.maxModelCalls?' / 上限 '+job.maxModelCalls+' 次':''}`);if(p.layoutRound&&phaseIndex(p.phase)===3)counts.push(`排版检查第 ${p.layoutRound} 轮`);q('[data-count]').textContent=counts.join(' · ');
   q('[data-elapsed]').textContent=(terminal?'总耗时 ':'已用时 ')+elapsed;
   q('[data-contact]').textContent=terminal?(job.status==='unavailable'?'任务状态尚未确认':'最终状态已确认'):lastContact?`状态连接：${duration(Date.now()-lastContact)}前收到回复`:'正在连接任务服务…';
-  q('[data-step-time]').textContent=running&&job?.phaseStartedAt?'当前步骤已用 '+duration(Date.now()-job.phaseStartedAt):'';
+  q('[data-step-time]').textContent=running&&job?.phaseStartedAt?'当前阶段已用 '+duration(Date.now()-job.phaseStartedAt)+(p.requestStartedAt&&['chunks','reduce','compose'].includes(p.phase)?'；本次请求已用 '+duration(Date.now()-p.requestStartedAt)+'（单次时限 '+duration(p.requestTimeoutMs)+'）':''):'';
   q('[data-error]').hidden=!offline&&!job?.error;q('[data-error]').textContent=offline||job?.error||'';
   q('[data-close]').textContent=terminal?'关闭':'关闭（后台继续）';q('[data-cancel]').hidden=!!terminal;q('[data-cancel]').disabled=!job?.id||!!job?.cancelling;
-  q('[data-retry]').hidden=!terminal||job.status==='complete';q('[data-retry]').textContent=job?.status==='unavailable'?'重新查询／重试':'重新生成';
+  q('[data-retry]').hidden=!terminal||job.status==='complete';q('[data-retry]').textContent=job?.status==='unavailable'?'重新查询／重试':'重试（复用已完成内容）';
   q('[data-draft]').hidden=!terminal||!job?.draftId||job.status==='complete';q('[data-result]').hidden=job?.status!=='complete';
   q('[data-events]').innerHTML=(job?.events||[]).slice(-6).reverse().map(event=>`<li>${e(event.message)}</li>`).join('')||'<li>任务启动后会记录实际阶段变化。</li>';
  }

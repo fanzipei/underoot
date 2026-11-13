@@ -74,7 +74,7 @@ export async function prepareSession(project,user,body,runtime={}){
  if(body.planDigest!==plan.digest)throw failure(409,'稿件发生变化，请刷新分块计划');
  if(body.useAI&&body.maxModelCalls!==plan.modelCalls)throw failure(400,'模型调用预算发生变化');
  const check=()=>{if(runtime.signal?.aborted)throw failure(499,'已取消');const account=db.prepare('SELECT status,disabled FROM users WHERE id=?').get(user);if(!account||account.disabled||account.status!=='active'||!['owner','editor'].includes(memberRole(project.id,user)))throw failure(403,'源项目编辑权限已变化');if(!db.prepare("SELECT enabled FROM extensions WHERE id='underoot.publishing'").get()?.enabled)throw failure(409,'发布插件已停用');};
- const summary=await summarizePaper(plan,options,{useAI:!!body.useAI,model:(instruction,input)=>callModel(instruction,input,[],{timeout:120000,signal:runtime.signal}),progress:runtime.progress,check,cache:body.useAI?summaryCache(project,user,plan):null});check();
+ const summary=await summarizePaper(plan,options,{useAI:!!body.useAI,model:(instruction,input,request)=>callModel(instruction,input,[],{timeout:request?.timeout||120000,signal:runtime.signal}),progress:runtime.progress,check,cache:body.useAI?summaryCache(project,user,plan):null});check();
  const editorial=editorialPlan(plan,summary,options);for(const page of editorial.pages)if(!layouts.has(page.layout))page.layout=page.figures.length?'visual':page.bullets.length<2?'statement':'split';
  editorial.identity=plan.identity;const id=crypto.randomUUID();const data={source,plan,summary,editorial,options,useAI:!!body.useAI,messages:[],evidenceVersion:5,rendererVersion:7};
  db.prepare('INSERT INTO publishing_sessions(id,source_project,owner,version,payload,updated_at) VALUES(?,?,?,1,?,?)').run(id,project.id,user,JSON.stringify(data),Date.now());

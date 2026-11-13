@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {DATA_DIR} from '../../../server/paths.js';
 import crypto from 'node:crypto';
 import { deriveProject, publishingPlan } from './server.js';
 import { publishingOptions } from './styles.mjs';
@@ -7,6 +10,11 @@ import { listCustomTemplates } from '../../../server/publishing-templates.js';
 import {prepareSession,generateSession,getSession,reflowSession} from './sessions.mjs';
 const jobs = new Map();
 const active = (job) => ['queued','running'].includes(job.status);
+function retainFailure(job){
+ // Store diagnostics, never prompts, provider responses, credentials or manuscript text.
+ try{const dir=path.join(DATA_DIR,'cache','publishing-failures');fs.mkdirSync(dir,{recursive:true,mode:0o700});const report={id:job.id,projectId:job.projectId,userId:job.userId,status:job.status,error:job.error,failedPhase:job.failedPhase,modelCalls:job.progress.modelCalls,retryKind:job.progress.retryKind,createdAt:job.createdAt,finishedAt:job.finishedAt,events:job.events};fs.writeFileSync(path.join(dir,job.id+'.json'),JSON.stringify(report),{mode:0o600});const files=fs.readdirSync(dir).filter(n=>/^[a-f0-9-]+\.json$/.test(n)).map(n=>({n,t:fs.statSync(path.join(dir,n)).mtimeMs})).sort((a,b)=>b.t-a.t);for(const f of files.slice(80))fs.rmSync(path.join(dir,f.n));}catch(error){console.warn('Publishing diagnostic could not be saved:',error.code||'unknown');}
+}
+
 const expose = ({ controller, userId, ...job }) => job;
 export function activePublishingJobs(projectId,userId){return{jobs:[...jobs.values()].filter(j=>j.projectId===projectId&&j.userId===userId&&active(j)).map(expose)};}
 export function startPublishing(project, userId, body) {
@@ -38,7 +46,7 @@ export function startPublishing(project, userId, body) {
    else job.result=draft?await (body.phase==='reflow'?reflowSession:generateSession)(project,userId,body.draftId,body,runtime):body.phase==='outline'?await prepareSession(project,userId,body,runtime):await deriveProject(project,userId,body,runtime);
    job.status='complete'; job.progress={...job.progress,phase:'complete',message:body.phase==='outline'?'提纲已保存，请编辑并确认':body.phase==='reflow'?'已完成当前项目重排，历史版本保留':'已生成独立项目，原稿保留'};
   }catch(error){job.failedPhase=job.progress.phase;job.status=job.controller.signal.aborted?'cancelled':'failed';job.error=job.controller.signal.reason==='timeout'?'生成超过 20 分钟，已停止；原稿保留':job.controller.signal.aborted?'已取消生成，原稿保留':error.message;job.progress={...job.progress,phase:job.status,message:job.error};}
-  finally{clearTimeout(timer);clearInterval(heartbeat);job.finishedAt=Date.now();job.updatedAt=job.finishedAt;job.heartbeatAt=job.finishedAt;}
+  finally{clearTimeout(timer);clearInterval(heartbeat);job.finishedAt=Date.now();job.updatedAt=job.finishedAt;job.heartbeatAt=job.finishedAt;if(job.status==='failed')retainFailure(job);}
  });
  return expose(job);
 }

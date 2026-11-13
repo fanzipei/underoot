@@ -80,4 +80,15 @@ const bib=parseReferences(String.raw`@inproceedings{doe2024method,author={Doe, J
 check('reference text is formatted from source metadata with intact author order',bib[0].slideText.includes('Doe, Jane, et al.')&&bib[0].slideText.includes('A Grounded Method')&&bib[0].slideText.includes('2024')&&!bib[0].slideText.includes('al..'));
 check('related work cites source-linked entries rather than invented references',relatedReferences({sourceIds:['c0001'],tables:[]},{references:[{...bib[0],sourceIds:['c0001']},{...bib[0],key:'unrelated',sourceIds:['c0002']}]}).length===1);
 const legacyImage={...manyPages[3],figures:[{path:'source.png',caption:'Source evidence'}],figureHeight:.3};check('compaction clears legacy auto-shrunk image bounds',compactSlides([legacyImage],{},{count:18}).pages[0].figureHeight===undefined);
+
+let transportCalls=0;const transportEvents=[],requestPolicies=[];
+await summarizePaper(tolerantPlan,{kind:'slides',count:2},{useAI:true,progress:e=>transportEvents.push(e),model:async(_p,input,policy)=>{requestPolicies.push(policy);if(input.nodes){if(!transportCalls++)throw Object.assign(Error('service timeout'),{status:504});return JSON.stringify({sections:[{title:'Scoped finding',bullets:['Original finding.'],sourceIds:input.nodes.flatMap(n=>n.ids)}]});}return JSON.stringify({summary:'Original finding.'});}});
+check('transport timeout retries distinctly without claiming validation failed',transportEvents.some(e=>e.retryKind==='transport'&&e.message.includes('超时'))&&!transportEvents.some(e=>e.message.includes('未通过校验'))&&requestPolicies.some(p=>p.phase==='compose'&&p.timeout===240000));
+const checkpoints=new Map();let reductionCalls=0,failCompose=true;const checkpointPlan=paperPlan(Array.from({length:9},(_,i)=>`\\section{Topic ${i}}Scoped original evidence ${i}.`).join('\n'));
+const checkpointModel=async(_p,input)=>{if(input.nodes){if(failCompose)throw Object.assign(Error('timeout'),{status:504});return JSON.stringify({sections:[{title:'Scoped finding',bullets:['Original scoped finding.'],sourceIds:input.nodes.flatMap(n=>n.ids)}]});}if(input.summaries)reductionCalls++;return JSON.stringify({summary:'Scoped original finding.'});};
+const checkpointOptions={useAI:true,cache:{get:k=>checkpoints.get(k),set:(k,v)=>checkpoints.set(k,v)},model:checkpointModel};
+await assert.rejects(summarizePaper(checkpointPlan,{kind:'slides',count:2},checkpointOptions),/请求重试后仍失败/);const completedReductions=reductionCalls;failCompose=false;
+const resumed=await summarizePaper(checkpointPlan,{kind:'slides',count:2},checkpointOptions);
+check('final-request retry reuses completed hierarchical summaries',completedReductions>0&&reductionCalls===completedReductions&&resumed.modelCalls===1);
+const reusedNarrative=await summarizePaper(checkpointPlan,{kind:'slides',count:2},checkpointOptions);check('validated narrative checkpoint resumes without repeating a successful model request',reusedNarrative.modelCalls===0&&reusedNarrative.sections.length===resumed.sections.length);
 console.log(`Publishing evidence: ${count}/${count} passed`);

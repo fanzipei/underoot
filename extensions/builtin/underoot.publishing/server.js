@@ -75,7 +75,7 @@ export async function deriveProject(project, userId, body, runtime = {}) {
   if (body.planDigest && body.planDigest !== plan.digest) throw failure(409, '论文或插图已变化，请重新查看分块计划和确认风格');
   if (body.useAI && body.maxModelCalls !== plan.modelCalls) throw failure(400, '请先查看分块计划并确认模型调用次数');
   const summary = runtime.approved?.summary || await summarizePaper(plan, options, { useAI: !!body.useAI,
-   model: (instruction,input) => callModel(instruction,input,[],{ timeout:120000,signal:runtime.signal }),
+   model: (instruction,input,request) => callModel(instruction,input,[],{ timeout:request?.timeout||120000,signal:runtime.signal }),
    progress: runtime.progress, check,cache:body.useAI?summaryCache(project,userId,plan):null });
   check(); runtime.progress?.({ phase:'render', message:'正在应用确认的风格并保存独立项目', modelCalls:summary.modelCalls });
   const editorial=runtime.approved?.editorial || editorialPlan(plan,summary,options);

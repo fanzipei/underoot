@@ -182,6 +182,7 @@ try{
  let failure;for(let n=0;n<180;n++){failure=(await req(tracking+'/jobs/'+pending.id,owner)).data;if(failure.status==='failed')break;await new Promise(r=>setTimeout(r,100));}
  badSummary=false;holdSummary=false;
  check('oversized model response is terminal with an actionable size error',failure.status==='failed'&&failure.progress.phase==='failed'&&failure.error.includes('5001')&&!!failure.finishedAt);
+ const diagnostic=JSON.parse(fs.readFileSync(path.join(process.env.LATEXSTUDIO_DATA,'cache','publishing-failures',pending.id+'.json'),'utf8'));check('failed job retains bounded private diagnostics without prompts or responses',diagnostic.id===pending.id&&diagnostic.failedPhase==='chunks'&&!('prompt' in diagnostic)&&!('response' in diagnostic));
  check('failed job no longer appears active and makes no further API calls',!(await req(tracking+'/jobs',owner)).data.jobs.length&&calls===beforeFailureCalls+3);
  const resumeProject=(await req('/api/projects',owner,'POST',{name:'Partial summary recovery fixture',template:'blank'})).data.project;
  await req(`/api/projects/${resumeProject.id}/file?path=main.tex`,owner,'PUT',{content:String.raw`\section{Good source}A preserved first source statement.\section{Bad response}A second original statement under the same scope.`});
@@ -191,5 +192,8 @@ try{
  check('partial reading fails only after bounded model correction',partial.status==='failed');const resumeCalls=calls;
  const secondResume=(await req(resumeBase+'/jobs',owner,'POST',runBody)).data;const recovered=await finishResume(secondResume.id);
  check('retry reuses validated completed chunks from the private cache',recovered.status==='complete'&&calls-resumeCalls===2);
+
+ const {remoteJSON}=await import('../server/ai-service.js');const trickle=http.createServer((_r,res)=>{res.writeHead(200,{'Content-Type':'application/json'});res.write(' ');const timer=setInterval(()=>res.write(' '),10);res.on('close',()=>clearInterval(timer));});trickle.listen(0,'127.0.0.1');await once(trickle,'listening');
+ try{const at=Date.now();await assert.rejects(remoteJSON(`http://127.0.0.1:${trickle.address().port}/`,{allowLocal:true,timeout:1000,deadlineMs:80}),{status:504});check('provider keepalives cannot bypass the AI request deadline',Date.now()-at<800);}finally{await new Promise(r=>trickle.close(r));}
  console.log(`Publishing studio: ${checks}/${checks} passed`);
 }finally{await new Promise(r=>mock.close(r));}

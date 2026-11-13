@@ -53,7 +53,7 @@ export async function validateEndpoint(value, { allowQuery = false, allowLocal =
 }
 
 /** Pin validated DNS records and reject redirects; never forward credentials to a redirect. */
-export async function remoteJSON(rawUrl, { body, key, timeout = 90000, method, allow404 = false, maxResponse = 2 * 1024 * 1024, allowLocal, signal } = {}) {
+export async function remoteJSON(rawUrl, { body, key, timeout = 90000, method, allow404 = false, maxResponse = 2 * 1024 * 1024, allowLocal, signal, deadlineMs } = {}) {
   const { url, records } = await validateEndpoint(rawUrl, { allowQuery: true, allowLocal });
   return new Promise((resolve, reject) => {
     const payload = body ? JSON.stringify(body) : null;
@@ -80,6 +80,9 @@ export async function remoteJSON(rawUrl, { body, key, timeout = 90000, method, a
         catch { reject(failure(502, '服务未返回有效 JSON')); }
       });
     });
+    // AI requests have a wall-clock deadline as well as the socket inactivity timeout.
+    const deadline=deadlineMs?setTimeout(()=>req.destroy(failure(504,'服务请求超时，请稍后重试')),deadlineMs):null;
+    if(deadline){deadline.unref();req.once('close',()=>clearTimeout(deadline));}
     req.setTimeout(timeout, () => req.destroy(failure(504, '服务请求超时，请稍后重试')));
     req.on('error', (error) => reject(failure(error.status || 502, error.status ? error.message : '无法连接服务，请检查 API 配置与网络')));
     req.end(payload);
@@ -116,7 +119,7 @@ export async function callModel(instruction, input, images = [], options = {}) {
   const endpoint = config.baseUrl.endsWith('/chat/completions') ? config.baseUrl : config.baseUrl + '/chat/completions';
   const content = [{ type: 'text', text: JSON.stringify(input) }];
   if (config.vision) for (const image of images.slice(0, 4)) content.push({ type: 'image_url', image_url: { url: image, detail: 'auto' } });
-  const response = await remoteJSON(endpoint, { key: unseal(config.key), timeout:options.timeout || 90000, signal:options.signal, body: {
+  const response = await remoteJSON(endpoint, { key: unseal(config.key), timeout:options.timeout || 90000, deadlineMs:options.timeout || 90000, signal:options.signal, body: {
     model: config.model,
     ...(options.maxOutputTokens?{[config.tokenLimitField||'max_completion_tokens']:options.maxOutputTokens}:{}),
     messages: [{ role: 'system', content: instruction }, { role: 'user', content: content.length === 1 ? content[0].text : content }],
