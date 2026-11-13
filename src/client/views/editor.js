@@ -269,6 +269,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
             <span id="st-pos">行 1, 列 1</span>
             <span id="st-sel"></span>
             <span id="st-engine"></span>
+            <button id="wrap-toggle" class="btn btn-ghost btn-sm" title="自动换行（Alt+Z）" aria-pressed="true">自动换行：开</button>
             <button id="vim-toggle" class="vim-toggle" title="Vim 编辑模式：normal / insert / visual；:w 编译保存" hidden>VIM OFF</button>
             <span style="margin-left:auto" id="st-collab">协同已连接</span>
           </div>
@@ -361,6 +362,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   const collabComp = new Compartment();
   const langComp = new Compartment();
   const commentComp = new Compartment();
+  const wrapComp=new Compartment(),wrapKey=`underoot.wrap.${user.id}`;let wrapEnabled=localStorage.getItem(wrapKey)!=='0';
+  function setWrap(value){wrapEnabled=value;view.dispatch({effects:wrapComp.reconfigure(value?EditorView.lineWrapping:[])});localStorage.setItem(wrapKey,value?'1':'0');const button=root.querySelector('#wrap-toggle');button.textContent=value?'自动换行：开':'自动换行：关';button.setAttribute('aria-pressed',String(value));}
   const vimComp=new Compartment();let vimEnabled=false;let vimModule;
   let onDocChange = () => {};
 
@@ -370,6 +373,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
       doc: '',
       extensions: [
         vimComp.of([]),
+        wrapComp.of(wrapEnabled?EditorView.lineWrapping:[]),
+        keymap.of([{key:"Alt-z",run:()=>{setWrap(!wrapEnabled);return true;}}]),
         EditorState.readOnly.of(!canEdit),
         EditorView.editable.of(canEdit),
         lineNumbers(),
@@ -410,6 +415,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
       ],
     }),
   });
+
+  root.querySelector('#wrap-toggle').onclick=()=>setWrap(!wrapEnabled);setWrap(wrapEnabled);
 
   function updateStatus() {
     const sel = view.state.selection.main;

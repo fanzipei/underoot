@@ -32,8 +32,9 @@ export function startPublishing(project, userId, body) {
  if ([...jobs.values()].some((j)=>active(j)&&(j.projectId===project.id||j.userId===userId))) throw failure(409,'你或此项目已有生成任务，请先查看或取消');
  if ([...jobs.values()].filter(active).length>=2) throw failure(429,'生成队列正忙，请稍后重试');
  if (jobs.size>=80) for (const [id,job] of jobs) if (!active(job)) { jobs.delete(id); break; }
+ if(body.shortFindings&&!aiConfig().configured)throw failure(503,'请先配置模型 API，再整理图表短句');
  const id=crypto.randomUUID();
- const ts=Date.now();const job={id,projectId:project.id,userId,status:'queued',options,useAI:!!body.useAI,maxModelCalls:body.useAI?body.maxModelCalls:0,progress:{phase:'queued',message:'已确认风格，等待启动'},createdAt:ts,updatedAt:ts,phaseStartedAt:ts,heartbeatAt:ts,events:[],controller:new AbortController()};
+ const ts=Date.now();const job={id,projectId:project.id,userId,status:'queued',options,useAI:!!body.useAI||!!body.shortFindings,maxModelCalls:body.shortFindings?2:body.useAI?body.maxModelCalls:0,progress:{phase:'queued',message:'已确认风格，等待启动'},createdAt:ts,updatedAt:ts,phaseStartedAt:ts,heartbeatAt:ts,events:[],controller:new AbortController()};
  jobs.set(id,job);
  setImmediate(async()=>{
   if (job.status==='cancelled') return;

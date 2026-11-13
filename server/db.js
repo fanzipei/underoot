@@ -138,7 +138,7 @@ for (const [name, type] of [['active_branch', 'TEXT'], ['collab_epoch', 'INTEGER
   if (!projectColumns.some((c) => c.name === name)) db.exec(`ALTER TABLE projects ADD COLUMN ${name} ${type}`);
 }
 for (const [table, columns] of Object.entries({
-  comments: [['assignee_id', 'TEXT'], ['priority', "TEXT NOT NULL DEFAULT 'normal'"]],
+  comments: [['pdf_anchor', 'TEXT'], ['assignee_id', 'TEXT'], ['priority', "TEXT NOT NULL DEFAULT 'normal'"]],
   comment_replies: [['reply_to', 'TEXT'], ['updated_at', 'INTEGER']],
 })) {
   const existing = db.prepare(`PRAGMA table_info(${table})`).all();
@@ -392,6 +392,7 @@ function commentJson(row, replies) {
     quote: row.quote || '',
     page: row.page == null ? null : Number(row.page),
     rect,
+    pdfAnchor: (()=>{try{return row.pdf_anchor?JSON.parse(row.pdf_anchor):null;}catch{return null;}})(),
     resolved: !!row.resolved,
     assigneeId: row.assignee_id || null,
     priority: row.priority || 'normal',
@@ -438,7 +439,7 @@ export function getComment(projectId, commentId) {
   return commentJson(row, repliesFor([row.id]).get(row.id) || []);
 }
 
-export function createComment({ projectId, authorId, body, anchorType, path, from, to, quote, page, rect }) {
+export function createComment({ projectId, authorId, body, anchorType, path, from, to, quote, page, rect, pdfAnchor }) {
   const id = crypto.randomUUID();
   const ts = Date.now();
   db.prepare(`
@@ -455,6 +456,7 @@ export function createComment({ projectId, authorId, body, anchorType, path, fro
     rect ? JSON.stringify(rect) : null,
     ts, ts,
   );
+  if(pdfAnchor)db.prepare('UPDATE comments SET pdf_anchor=? WHERE id=?').run(JSON.stringify(pdfAnchor),id);
   return getComment(projectId, id);
 }
 

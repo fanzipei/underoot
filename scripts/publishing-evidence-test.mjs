@@ -1,3 +1,4 @@
+import{findingPoints,refineSlideFindings}from'../skills/underoot-paper-publishing/scripts/slide-findings.mjs';
 import{summarizePaper}from'../skills/underoot-paper-publishing/scripts/summarize.mjs';
 import{assetFindings,assetInsight,enrichEvidencePages}from'../skills/underoot-paper-publishing/scripts/asset-findings.mjs';
 import{paperPlan,splitPaper}from'../skills/underoot-paper-publishing/scripts/chunk-paper.mjs';
@@ -91,4 +92,8 @@ await assert.rejects(summarizePaper(checkpointPlan,{kind:'slides',count:2},check
 const resumed=await summarizePaper(checkpointPlan,{kind:'slides',count:2},checkpointOptions);
 check('final-request retry reuses completed hierarchical summaries',completedReductions>0&&reductionCalls===completedReductions&&resumed.modelCalls===1);
 const reusedNarrative=await summarizePaper(checkpointPlan,{kind:'slides',count:2},checkpointOptions);check('validated narrative checkpoint resumes without repeating a successful model request',reusedNarrative.modelCalls===0&&reusedNarrative.sections.length===resumed.sections.length);
+
+check('visual points preserve original numbers and reject invented values',findingPoints(['Result 94; baseline 91.'],'Result 94; baseline 91.').length===1);assert.throws(()=>findingPoints(['Result 95.'],'Result 94.'),/数字发生变化/);
+const compactVisuals=[{id:'f',title:'Scoped response',figures:[{}],takeaway:'Responses remain graded, including unobserved doses.',bullets:[]}];await refineSlideFindings(compactVisuals,async()=>JSON.stringify({pages:[{id:'f',intro:'Source-grounded response',points:['Graded responses.','Includes unobserved doses.']}]}));check('visual copy is retained while short points are added',compactVisuals[0].takeaway.includes('unobserved')&&compactVisuals[0].findingPoints.length===2);
+const beforeInvalid=JSON.stringify(compactVisuals);await assert.rejects(refineSlideFindings(compactVisuals,async()=>JSON.stringify({pages:[{id:'unknown',intro:'Source-grounded response',points:['Unsupported.']}]})),/修正未通过/);check('invalid visual rewrite cannot partially change pages',JSON.stringify(compactVisuals)===beforeInvalid);
 console.log(`Publishing evidence: ${count}/${count} passed`);

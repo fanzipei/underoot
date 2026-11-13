@@ -1,3 +1,5 @@
+import{validatePdfAnchor}from'../src/shared/pdf-anchors.js';
+import{captureSourceAnchor,locateSourceAnchors}from'./pdf-anchors.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -274,6 +276,7 @@ function loadProject(req, res, next) {
   if (!role) return res.status(403).json({ error: '无权访问该项目' });
   if (!['GET', 'HEAD'].includes(req.method) && !['owner', 'editor'].includes(role)) {
     const isDiscussion = /\/comments(?:\/|$)/.test(req.path);
+    if(/\/pdf\/(?:source-anchor|locate-anchors)$/.test(req.path)){req.project=row;req.role=role;return next();}
     if (role !== 'reviewer' || !isDiscussion) return res.status(403).json({ error: role === 'viewer' ? '此项目为只读权限' : '审阅者可以评论，不能修改项目内容' });
   }
   req.project = row;
@@ -632,7 +635,8 @@ function normalizeAnchor(body, projectId) {
       w: Math.min(1, Math.max(0.004, Number(r.w))),
       h: Math.min(1, Math.max(0.004, Number(r.h))),
     };
-    return { anchor: { anchorType: 'pdf', page, rect, path: null, from: null, to: null, quote: '' } };
+    let pdfAnchor=null;if(body.pdfAnchor){try{pdfAnchor=validatePdfAnchor(body.pdfAnchor);if(pdfAnchor.page!==page)throw Error('页码不符');pdfAnchor.rect=rect;}catch{return{error:'PDF 内容关联信息无效'};}}
+    return { anchor: { anchorType: 'pdf', page, rect, path: null, from: null, to: null, quote: '',pdfAnchor } };
   }
   const rel = normalizeRelPath(body?.path || '');
   resolveInside(projectDir(projectId), rel);   // 路径穿越会直接抛错
@@ -648,6 +652,10 @@ function normalizeAnchor(body, projectId) {
     },
   };
 }
+
+projectsRouter.post('/:id/pdf/source-anchor',loadProject,async(req,res)=>{const source=await captureSourceAnchor(req.project,req.body||{});res.json({source});});
+projectsRouter.post('/:id/pdf/locate-anchors',loadProject,async(req,res)=>{res.json({locations:await locateSourceAnchors(req.project,req.body||{})});});
+projectsRouter.patch('/:id/comments/:cid/pdf-anchor',loadProject,(req,res)=>{const c=getComment(req.project.id,req.params.cid);if(!c||c.anchorType!=='pdf')return res.status(404).json({error:'PDF 评论不存在'});if(req.role!=='owner'&&req.role!=='editor'&&!(req.role==='reviewer'&&c.authorId===req.user.id))return res.status(403).json({error:'需要编辑权限'});let anchor;try{anchor=validatePdfAnchor(req.body.pdfAnchor);}catch{return res.status(400).json({error:'PDF 关联信息无效'});}db.prepare('UPDATE comments SET pdf_anchor=?,page=?,rect=? WHERE id=? AND project_id=?').run(JSON.stringify(anchor),anchor.page,JSON.stringify(anchor.rect),c.id,req.project.id);const comment=getComment(req.project.id,c.id);broadcastComment(req.project.id,'anchored',comment);res.json({comment});});
 
 projectsRouter.get('/:id/comments', loadProject, (req, res) => {
   res.json({ comments: listComments(req.project.id) });

@@ -1,3 +1,4 @@
+import{clampRect}from'../../shared/pdf-anchors.js';
 /**
  * 协作评论（含 Overleaf 没有的 PDF 圈选评论）
  *
@@ -66,7 +67,7 @@ export function createComments({
   root, projectId, user, view, pdfViewer,
   getActivePath, openFile, onCount, role = 'editor', onPdfRegion, onOpen,
 }) {
-  let comments = [];
+  let comments = [];let resolvedPdf=new Map(),paintGeneration=0;
   let filter = 'open';           // open | all
   let expanded = new Set();
   let panelOpen = false;
@@ -204,14 +205,22 @@ export function createComments({
     if (!rect || rect.w < 0.008 || rect.h < 0.008) return;
     const page = Number(wrapper.dataset.page);
     promptComment(`第 ${page} 页 · 圈选区域`, null, async (text) => {
-      await api.post(base, { body: text, anchorType: 'pdf', page, rect });
+      const pdfAnchor=await captureContentAnchor(page,rect);
+      await api.post(base, { body: text, anchorType: 'pdf', page, rect,pdfAnchor });
       await load();
       openPanel();
       toast('圈选评论已添加', 'ok');
     }, onPdfRegion ? (question) => onPdfRegion({ page, rect, question }) : null);
   }
 
-  function paintPdfMarks() {
+  async function captureContentAnchor(page,rect){try{const anchor=await pdfViewer.captureAnchor(page,rect);try{const {source}=await api.post(`/api/projects/${projectId}/pdf/source-anchor`,{page,rect,revision:anchor.revision,width:anchor.width,height:anchor.height});if(source)anchor.source=source;}catch{/* Text/image association survives an unavailable source service. */}return anchor;}catch{return null;}}
+  const statusLabel=c=>{const s=resolvedPdf.get(c.id)?.status;return s==='text'?'文字近似定位':s==='image'?'图片近似定位':s==='source'?'源码近似定位':s==='bound'?'已关联内容':s==='uncertain'?'位置不确定，保留原框':s==='unmatched'?'内容未匹配，保留原框':c.pdfAnchor?'待定位':'未关联内容';};
+  async function paintPdfMarks() {
+    const seq=++paintGeneration;if(!pdfViewer)return;
+    try{const next=await pdfViewer.resolveAnchors(comments);if(seq!==paintGeneration||destroyed)return;const pending=comments.filter(c=>c.pdfAnchor?.source&&['unmatched','uncertain'].includes(next.get(c.id)?.status));if(pending.length){const {locations}=await api.post(`/api/projects/${projectId}/pdf/locate-anchors`,{revision:pdfViewer.getRevision(),anchors:pending.slice(0,50).map(c=>({id:c.id,source:c.pdfAnchor.source}))});for(const loc of locations){const c=pending.find(c=>c.id===loc.id),old=c.pdfAnchor.source.point,size=await pdfViewer.pageSize(loc.page),r=c.pdfAnchor.rect;next.set(c.id,{page:loc.page,rect:clampRect({...r,x:r.x+loc.x/size.width-old.x/old.width,y:r.y+loc.y/size.height-old.y/old.height}),status:'source',confidence:.65});}}
+    if(seq!==paintGeneration||destroyed)return;resolvedPdf=next;}catch{if(seq!==paintGeneration)return;resolvedPdf=new Map();}if(seq!==paintGeneration||destroyed)return;drawPdfMarks();if(panelOpen)paint();
+  }
+  function drawPdfMarks() {
     if (!pdfViewer) return;
     const pagesEl = pdfViewer.getPagesElement?.();
     if (!pagesEl) return;
@@ -237,18 +246,18 @@ export function createComments({
       wrapper.appendChild(layer);
     });
     comments.filter((c) => c.anchorType === 'pdf' && c.rect).forEach((c, idx) => {
-      const wrapper = pdfViewer.getPageElement?.(c.page);
+      const position=resolvedPdf.get(c.id)||c;const wrapper = pdfViewer.getPageElement?.(position.page);
       if (!wrapper) return;
       const layer = wrapper.querySelector('.pdf-comment-layer');
       if (!layer) return;
       const mark = document.createElement('button');
       mark.type = 'button';
       mark.className = `pdf-comment-mark${c.resolved ? ' resolved' : ''}`;
-      mark.style.left = `${c.rect.x * 100}%`;
-      mark.style.top = `${c.rect.y * 100}%`;
-      mark.style.width = `${c.rect.w * 100}%`;
-      mark.style.height = `${c.rect.h * 100}%`;
-      mark.title = `${c.authorName}：${c.body.slice(0, 80)}`;
+      mark.style.left = `${position.rect.x * 100}%`;
+      mark.style.top = `${position.rect.y * 100}%`;
+      mark.style.width = `${position.rect.w * 100}%`;
+      mark.style.height = `${position.rect.h * 100}%`;
+      mark.title = `${statusLabel(c)} · ${c.authorName}：${c.body.slice(0, 80)}`;
       mark.dataset.commentId = c.id;
       const badge = document.createElement('span');
       badge.className = 'pdf-comment-badge';
@@ -311,7 +320,7 @@ export function createComments({
 
   function anchorLabel(c) {
     return c.anchorType === 'pdf'
-      ? `PDF 第 ${c.page} 页 · 圈选区域`
+      ? `PDF 第 ${resolvedPdf.get(c.id)?.page||c.page} 页 · ${statusLabel(c)}`
       : `${escapeHtml(c.path || '')}${c.from != null ? ` · 第 ${c.from} 字符` : ''}`;
   }
 
@@ -350,6 +359,8 @@ export function createComments({
             </div><div class="discussion-assignment"><select class="input" aria-label="指派处理人" data-assignee="${c.id}"><option value="">未指派</option>${members.filter((m) => m.role !== 'viewer').map((m) => `<option value="${m.id}" ${c.assigneeId === m.id ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('')}</select><select class="input" aria-label="评论优先级" data-priority="${c.id}"><option value="normal">普通</option><option value="high" ${c.priority === 'high' ? 'selected' : ''}>优先处理</option></select></div>` : ''}
             <div class="comment-actions">
               <button class="btn btn-ghost btn-sm" data-act="locate" data-id="${c.id}">${icon('arrow-right')}定位</button>
+              ${c.pdfAnchor?.source?`<button class="btn btn-ghost btn-sm" data-anchor-source="${c.id}">对应 TeX</button>`:''}
+              ${canComment&&c.anchorType==='pdf'?`<button class="btn btn-ghost btn-sm" data-reanchor="${c.id}">关联当前框内内容</button>`:''}
               ${canComment ? `<button class="btn btn-ghost btn-sm" data-act="resolve" data-id="${c.id}">${c.resolved ? '重新打开' : '标记已解决'}</button>` : ''}
               ${canDelete ? `<button class="btn btn-ghost btn-sm" data-edit-comment="${c.id}">编辑评论</button>` : ''}
               ${canDelete ? `<button class="btn btn-ghost btn-sm danger-text" data-act="delete" data-id="${c.id}">删除</button>` : ''}
@@ -406,6 +417,8 @@ export function createComments({
         paint();
       };
     });
+    panel.querySelectorAll('[data-anchor-source]').forEach(b=>{b.onclick=async()=>{try{const a=comments.find(c=>c.id===b.dataset.anchorSource).pdfAnchor.source;await openFile(a.path);const text=view.state.doc.toString(),at=text.indexOf(a.quote),from=at>=0?at:view.state.doc.line(Math.min(view.state.doc.lines,a.line)).from;view.dispatch({selection:{anchor:from},effects:EditorView.scrollIntoView(from,{y:'center'})});view.focus();}catch(e){toast(e.message,'err');}};});
+    panel.querySelectorAll('[data-reanchor]').forEach(b=>{b.onclick=async()=>{try{b.disabled=true;const c=comments.find(c=>c.id===b.dataset.reanchor),p=resolvedPdf.get(c.id)||c,anchor=await captureContentAnchor(p.page,p.rect);if(!anchor)throw Error('请先显示 PDF');await api.patch(base+'/'+c.id+'/pdf-anchor',{pdfAnchor:anchor});await load();toast('已关联当前框内内容','ok');}catch(e){toast(e.message,'err');}finally{b.disabled=false;}};});
     panel.querySelectorAll('[data-act="locate"]').forEach((b) => { b.onclick = () => locate(b.dataset.id); });
     panel.querySelectorAll('[data-act="resolve"]').forEach((b) => { b.onclick = () => toggleResolve(b.dataset.id); });
     panel.querySelectorAll('[data-act="delete"]').forEach((b) => { b.onclick = () => remove(b.dataset.id); });
@@ -446,8 +459,8 @@ export function createComments({
     const c = comments.find((x) => x.id === id);
     if (!c) return;
     if (c.anchorType === 'pdf') {
-      const wrapper = pdfViewer?.getPageElement?.(c.page);
-      if (!wrapper) { toast('请先编译生成 PDF 预览', 'err'); return; }
+      await paintPdfMarks();const position=resolvedPdf.get(c.id)||c;const wrapper = pdfViewer?.getPageElement?.(position.page);
+      if (!wrapper) { toast('原标注所在页不存在，尚未找到可靠的新位置', 'err'); return; }
       root.querySelector('#pane-pdf').style.display = 'flex';
       wrapper.scrollIntoView({ block: 'center', behavior: 'smooth' });
       const mark = wrapper.querySelector(`.pdf-comment-mark[data-comment-id="${c.id}"]`);

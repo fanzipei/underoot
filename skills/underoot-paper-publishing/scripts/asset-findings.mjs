@@ -33,7 +33,7 @@ export function assetFindings(source,label,chunks){
 
 export function assetInsight(asset,summary,card){
  const explicit=(summary.assetInsights||[]).find(n=>asset.path?n.figurePath===asset.path:n.tableId===asset.id);
- if(explicit)return{text:explicit.text,sourceIds:explicit.sourceIds};
+ if(explicit)return{text:explicit.text,points:explicit.points,intro:explicit.intro,sourceIds:explicit.sourceIds};
  if(asset.findings?.length)return asset.findings[0];
  const selected=asset.path?card.figurePaths?.includes(asset.path):card.tableIds?.includes(asset.id);
  if(selected&&card.explicitTakeaway&&card.takeaway.length<=220)return{text:card.takeaway,sourceIds:card.sourceIds};

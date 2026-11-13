@@ -1,3 +1,4 @@
+import{pdfRevision,textIndex,capturePdfAnchor,resolvePdfAnchor}from'../shared/pdf-anchors.js';
 /**
  * 轻量 PDF 渲染器：用 PDF.js 把页面画到 canvas 上，
  * 不使用浏览器自带的 PDF 插件界面（无工具栏、无缩略图侧栏、无浏览器菜单）。
@@ -16,7 +17,7 @@ export function createPdfViewer(host, { emptyEl = null, onState = () => {}, onPa
   pages.className = 'pdf-pages';
   host.appendChild(pages);
 
-  let pdf = null;
+  let pdf = null;let revision=null,indexes=new Map();
   let generation = 0;
   let zoom = 1;
   let pageCount = 0;
@@ -135,7 +136,7 @@ export function createPdfViewer(host, { emptyEl = null, onState = () => {}, onPa
       }
       const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
       if (!res.ok) throw new Error(`PDF 加载失败 (${res.status})`);
-      const data = new Uint8Array(await res.arrayBuffer());
+      const data = new Uint8Array(await res.arrayBuffer());revision=pdfRevision(data);indexes=new Map();
       if (gen !== generation || destroyed) return;
 
       pdf = await pdfjsLib.getDocument({
@@ -159,6 +160,13 @@ export function createPdfViewer(host, { emptyEl = null, onState = () => {}, onPa
         <a href="${url}" target="_blank" rel="noopener" style="color:var(--primary)">在新标签页打开原文件</a></div>`, true);
       emit({ error: String(err.message || err) });
     }
+  }
+
+  function sampleImage(canvas,r){if(!canvas)return{};const c=document.createElement('canvas');c.width=9;c.height=8;const ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(canvas,r.x*canvas.width,r.y*canvas.height,r.w*canvas.width,r.h*canvas.height,0,0,9,8);const pixels=ctx.getImageData(0,0,9,8).data,values=Array.from({length:72},(_,i)=>(pixels[i*4]+pixels[i*4+1]+pixels[i*4+2])/3),mean=values.reduce((a,b)=>a+b,0)/72;let hash='';for(let y=0;y<8;y++)for(let x=0;x<8;x++)hash+=values[y*9+x]>values[y*9+x+1]?'1':'0';return{hash,mean,contrast:Math.sqrt(values.reduce((a,b)=>a+(b-mean)**2,0)/72)};}
+  async function pageIndex(number){
+   if(indexes.has(number))return indexes.get(number);const document=pdf,currentRevision=revision;const work=(async()=>{const page=await document.getPage(number),v=page.getViewport({scale:1}),content=await page.getTextContent();const items=content.items.filter(i=>i.str&&i.width).map(i=>{const m=pdfjsLib.Util.transform(v.transform,i.transform),h=Math.hypot(m[2],m[3])||i.height||10;return{str:i.str,x:Math.max(0,m[4]/v.width),y:Math.max(0,(m[5]-h)/v.height),w:Math.min(1,i.width/v.width),h:Math.min(1,h/v.height)};});const index={...textIndex(items),page:number,width:v.width,height:v.height,images:[]};
+    try{const list=await page.getOperatorList(),stack=[];let m=[1,0,0,1,0,0];const canvas=pages.querySelector(`.pdf-page[data-page="${number}"] canvas`);for(let i=0;i<Math.min(list.fnArray.length,100000);i++){const op=list.fnArray[i],a=list.argsArray[i];if(op===pdfjsLib.OPS.save)stack.push([...m]);else if(op===pdfjsLib.OPS.restore)m=stack.pop()||[1,0,0,1,0,0];else if(op===pdfjsLib.OPS.transform)m=pdfjsLib.Util.transform(m,a);else if(op===pdfjsLib.OPS.paintFormXObjectBegin){stack.push([...m]);if(a?.[0])m=pdfjsLib.Util.transform(m,a[0]);}else if(op===pdfjsLib.OPS.paintFormXObjectEnd)m=stack.pop()||m;else if(op===pdfjsLib.OPS.paintImageXObject||op===pdfjsLib.OPS.paintInlineImageXObject){const t=pdfjsLib.Util.transform(v.transform,m),points=[[0,0],[1,0],[0,1],[1,1]].map(p=>{ /* PDF.js mutates this point in place. */ pdfjsLib.Util.applyTransform(p,t);return p;}),x=Math.max(0,Math.min(...points.map(p=>p[0]))/v.width),y=Math.max(0,Math.min(...points.map(p=>p[1]))/v.height),w=Math.min(1-x,(Math.max(...points.map(p=>p[0]))/v.width)-x),h=Math.min(1-y,(Math.max(...points.map(p=>p[1]))/v.height)-y);if(w>.025&&h>.02&&index.images.length<150){const r={x,y,w,h};index.images.push({...r,aspect:w*v.width/(h*v.height),...sampleImage(canvas,r)});}}}}
+    catch{/* Keep text/source association when raster extraction is unavailable. */}if(currentRevision!==revision)throw Error('PDF 已更新，请重新定位');return index;})();indexes.set(number,work);try{return await work;}catch(e){indexes.delete(number);throw e;}
   }
 
   function setZoom(next) {
@@ -191,6 +199,10 @@ export function createPdfViewer(host, { emptyEl = null, onState = () => {}, onPa
 
   return {
     load,
+    getRevision:()=>revision,
+    async captureAnchor(pageNumber,rect){if(!pdf)throw Error('请先显示 PDF');const index=await pageIndex(pageNumber);return{...capturePdfAnchor(index,pageNumber,rect,revision),width:index.width,height:index.height};},
+    async resolveAnchors(comments){if(!pdf)return new Map();const document=pdf,rev=revision,list=comments.filter(c=>c.anchorType==='pdf'&&c.pdfAnchor),result=new Map();if(!list.length)return result;const loaded=[];for(let i=1;i<=Math.min(pageCount,300);i++){if(pdf!==document)return new Map();loaded.push(await pageIndex(i));}for(const c of list)result.set(c.id,resolvePdfAnchor(c.pdfAnchor,loaded,rev));return result;},
+    async pageSize(number){const i=await pageIndex(number);return{width:i.width,height:i.height};},
     async getRegionContext(pageNumber, rect) {
       if (!pdf) throw new Error('请先编译并显示 PDF');
       const document = pdf;

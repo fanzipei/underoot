@@ -1,0 +1,13 @@
+import assert from'node:assert/strict';import{capturePdfAnchor,textIndex,resolvePdfAnchor,validatePdfAnchor,pdfRevision}from'../src/shared/pdf-anchors.js';
+let n=0;const check=(name,v)=>{assert.ok(v,name);n++;console.log('✓ '+name);};
+const words=(text,x,y)=>text.split(' ').map((str,i)=>({str,x:x+(i%4)*.1,y:y+Math.floor(i/4)*.035,w:.09,h:.025}));
+const original={...textIndex(words('A distinctive scientific passage links attendance dose with observed crowd flow under fixed conditions',.1,.2)),page:1,images:[]},r={x:.08,y:.18,w:.45,h:.2},a=capturePdfAnchor(original,1,r,'old');
+const moved={...textIndex(words('A distinctive scientific passage links attendance dose with observed crowd flow under fixed conditions',.3,.5)),page:3,images:[]};const matched=resolvePdfAnchor(a,[moved],'new');check('text selection follows page insertion and reflow',matched.status==='text'&&matched.page===3&&matched.rect.y>.45);
+check('same PDF retains exact original selection',resolvePdfAnchor(a,[moved],'old').rect===a.rect);
+check('ambiguous duplicate passages retain their original location',resolvePdfAnchor(a,[moved,{...moved,page:4}],'new').status==='uncertain');
+check('removed text is marked unmatched',resolvePdfAnchor(a,[{...textIndex(words('Unrelated material',.1,.1)),page:1}],'new').status==='unmatched');
+const hash='01010101'.repeat(8),oldImage={x:.2,y:.2,w:.5,h:.4,hash,aspect:1.25,contrast:40,mean:120},imageAnchor=capturePdfAnchor({...textIndex([]),images:[oldImage]},2,{x:.3,y:.3,w:.2,h:.1},'old'),newImage={...oldImage,x:.1,y:.4,w:.7,h:.56};const im=resolvePdfAnchor(imageAnchor,[{...textIndex([]),page:4,images:[newImage]}],'new');check('image selection follows movement and resizing',im.status==='image'&&im.page===4&&Math.abs(im.rect.w-.28)<.001&&im.rect.y>.5);
+check('image duplicates do not choose an arbitrary location',resolvePdfAnchor(imageAnchor,[{...textIndex([]),page:4,images:[newImage,{...newImage,y:.1}]}],'new').status==='uncertain');
+check('persisted anchors contain normalized text and bounded image metadata',validatePdfAnchor(a).text.key.length>12);assert.throws(()=>validatePdfAnchor({...a,source:{path:'../outside.tex',line:1,quote:'bad',point:{page:1,x:1,y:1,width:1,height:1}}}));n++;assert.throws(()=>validatePdfAnchor({...a,text:{...a.text,quote:'x'.repeat(901)}}));n++;
+check('PDF revision changes when bytes change',pdfRevision(new Uint8Array([1,2,3]))!==pdfRevision(new Uint8Array([1,2,4])));
+console.log(`PDF anchor unit: ${n}/${n} passed`);

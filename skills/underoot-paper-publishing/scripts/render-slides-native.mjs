@@ -20,17 +20,17 @@ function picture(page,graphic,notes){const scale=page.figureHeight?Math.max(.45,
 \long\def\underootportrait{
   \begin{columns}[c,onlytextwidth]
   \begin{column}{\underootimagewidth}\centering
-  \includegraphics[width=\linewidth,height=${(.96*scale).toFixed(3)}\underootavailable,keepaspectratio]{`+graphic.path+String.raw`}
+  \includegraphics[width=\linewidth,height=${(.88*scale).toFixed(3)}\underootavailable,keepaspectratio]{`+graphic.path+String.raw`}
   \end{column}
   \begin{column}{\underoottextwidth}\usebox{\underootnotebox}\end{column}
   \end{columns}}
 \long\def\underootwide{
-  \sbox{\underootnotebox}{\begin{minipage}{\linewidth}\raggedright `+notes+String.raw`\end{minipage}}
+  \sbox{\underootnotebox}{\begin{minipage}{.93\linewidth}\raggedright `+notes+String.raw`\end{minipage}}
   \setlength{\underootgraphicheight}{\dimexpr\underootavailable-\ht\underootnotebox-\dp\underootnotebox-10pt\relax}
   \ifdim\underootgraphicheight>${(.96*scale).toFixed(3)}\underootavailable\setlength{\underootgraphicheight}{${(.96*scale).toFixed(3)}\underootavailable}\fi
   \ifdim\underootgraphicheight<.45\underootavailable\setlength{\underootgraphicheight}{.45\underootavailable}\fi
   {\centering\includegraphics[width=\linewidth,height=\underootgraphicheight,keepaspectratio]{`+graphic.path+String.raw`}\par}
-  \par\smallskip\noindent\usebox{\underootnotebox}}
+  \begin{tikzpicture}[remember picture,overlay]\node[anchor=south west,inner sep=0pt] at ([xshift=.06\paperwidth,yshift=9pt]current page.south west) {\usebox{\underootnotebox}};\end{tikzpicture}}
 \ifdim\dimexpr\ht\underootnotebox+\dp\underootnotebox\relax>.82\underootavailable
 \setlength{\underootimagewidth}{.48\textwidth}\setlength{\underoottextwidth}{.48\textwidth}
 \sbox{\underootnotebox}{\begin{minipage}{\underoottextwidth}\raggedright `+notes+String.raw`\end{minipage}}\fi
@@ -51,20 +51,20 @@ export function renderNativeSlides(info,options,style,story,identity){
   const prose=lead+key+points(page)+equations(page)+tables(page)+renderDiagram(page.diagram,tex,true)+references(page);
   const visual=page.figures[0];
   let body=prose;
-  if(visual)body=picture(page,visual,lead+(page.takeaway?tex(page.takeaway)+'\\par\\medskip':'')+points(page)+references(page));
+  if(visual){const notes=page.findingPoints?.length?(page.findingIntro?tex(page.findingIntro)+'\\par\\smallskip':'')+'\\begin{itemize}'+page.findingPoints.map(p=>'\\item '+tex(p)).join('\n')+'\\end{itemize}':lead+(page.takeaway?tex(page.takeaway)+'\\par\\smallskip':'')+points(page);body=picture(page,visual,notes+references(page));}
   else if(page.layout==='comparison'&&page.bullets.length>=2){const cut=Math.ceil(page.bullets.length/2);body=key+'\\begin{columns}[c,onlytextwidth]'+[page.bullets.slice(0,cut),page.bullets.slice(cut)].map(b=>'\\begin{column}{.47\\textwidth}'+points({...page,takeaway:'',bullets:b})+'\\end{column}').join('')+'\\end{columns}'+equations(page)+tables(page)+renderDiagram(page.diagram,tex,true);}
   return`% underoot:block:${page.id}:start
 \\def\\underootframetitle{${tex(page.title)}}
 \\sbox{\\underootframetitlebox}{\\usebeamerfont{frametitle}\\underootframetitle}
 \\ifdim\\wd\\underootframetitlebox>.92\\textwidth\\def\\underootframetitle{${tex(({question:'Research question',gap:'Related work',method:'Method',result:'Results',limitation:'Limitations',conclusion:'Take-home message'})[page.role]||'Research evidence')}}\\sbox{\\underootframetitlebox}{\\usebeamerfont{frametitle}\\underootframetitle}\\fi
 \\typeout{UNDEROOT:TITLE:${page.id}:\\the\\wd\\underootframetitlebox:\\the\\textwidth}
-\\begin{frame}[c]{\\underootframetitle}
-\\setlength{\\underootavailable}{\\dimexpr\\textheight-2\\baselineskip\\relax}
+\\begin{frame}[${visual?'t':'c'}]{\\underootframetitle}
+\\setlength{\\underootavailable}{${visual?'\\dimexpr\\textheight-1.2\\baselineskip\\relax':'\\dimexpr\\textheight-2\\baselineskip\\relax'}}
 \\begin{lrbox}{\\underootslidebox}\\begin{minipage}{\\textwidth}
 ${body}
 \\end{minipage}\\end{lrbox}
-\\typeout{UNDEROOT:SLIDE:${page.id}:\\the\\dimexpr\\ht\\underootslidebox+\\dp\\underootslidebox\\relax:\\the\\dimexpr\\textheight-2\\baselineskip\\relax}
-\\usebox{\\underootslidebox}
+\\typeout{UNDEROOT:SLIDE:${page.id}:\\the\\dimexpr\\ht\\underootslidebox+\\dp\\underootslidebox\\relax:\\the\\underootavailable}
+${visual?'':'\\vspace*{3pt}'}\\usebox{\\underootslidebox}
 \\end{frame}
 % underoot:block:${page.id}:end`;
  }).join('\n\n');

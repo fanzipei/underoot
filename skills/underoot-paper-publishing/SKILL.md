@@ -66,3 +66,5 @@ Shared helpers `fit-layout.mjs` and `compile-measured.mjs` also drive the standa
 
 
 Generated CTeX posters/slides require a Unicode font engine. Underoot latexmk detects CTeX/fontspec in the main preamble and uses XeLaTeX; explicit pdfLaTeX returns an actionable incompatibility message. Check the actual project compiler as well as the fitting compiler, and reproduce the reported project in an isolated copy. Preserve any existing package-option repair preamble when repairing an approved output; reject unrelated manual differences and retain before/after history.
+
+For narrow visual sidebars, write a short source-grounded introductory phrase above 2–3 keyword-like points. Avoid repeating the introductory phrase in the list. Prefer 2–6-word points; preserve necessary conditions, negation, numbers and units. Store original prose in private notes. Wide visual pages can place the short explanation near the bottom baseline, with measured native-font text height and enough image/footnote clearance. Compile twice for overlay positioning and inspect the actual PDF; do not fill space by enlarging fonts.
