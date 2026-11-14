@@ -1197,3 +1197,13 @@ textarea.input { height: auto; padding: 10px 12px; resize: vertical; }
 @keyframes publishing-spin { to { transform:rotate(360deg); } }
 @media(prefers-reduced-motion:reduce) { .publishing-current i { animation:none; } }
 @media(max-width:560px) { .publishing-steps { gap:5px; } .publishing-steps li { font-size:11px; } #publishing-activity { right:16px; bottom:16px; } }
+
+/* Project-scoped agent access: keep header/actions reachable on smaller screens. */
+.agent-access-dialog .modal{max-height:calc(100vh - 32px);display:flex;flex-direction:column}
+.agent-access-dialog .modal-head,.agent-access-dialog .modal-foot{flex-shrink:0}
+.agent-access-dialog .modal-body{overflow:auto;min-height:0}
+.agent-access-form{display:grid;grid-template-columns:minmax(0,1fr) 120px;gap:10px;align-items:center}
+.agent-access-form label{font-size:13px;display:flex;gap:6px;align-items:center}
+.agent-access-dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;font-size:12px}
+.agent-access-dialog .extension-card{overflow-wrap:anywhere}
+@media(max-width:600px){.agent-access-form{grid-template-columns:1fr}}

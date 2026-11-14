@@ -22,6 +22,7 @@ import { workspaceRouter } from './workspace.js';
 import { extensionsRouter, extensionAssets } from './extensions.js';
 import { wasmRouter } from './wasm.js';
 import { publishingTemplatesRouter } from './publishing-templates.js';
+import {agentApiRouter,agentTokensRouter} from './agent-api.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -36,6 +37,8 @@ applySecurity(app);
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/projects', projectsRouter);
+app.use('/api/projects/:id/agent-tokens',agentTokensRouter);
+app.use('/api/agent/v1',agentApiRouter);
 app.use('/api/system', systemRouter);
 app.use('/api/workspace', workspaceRouter);
 app.use('/api/extensions', extensionsRouter);
@@ -58,6 +61,7 @@ app.get('*', (req, res, next) => {
 app.use((err, req, res, _next) => {
   console.error('[error]', err.message);
   if (res.headersSent) return;
+  if(err.status===429)res.setHeader('Retry-After','60');
   res.status(err.status || 500).json({ error: err.message || '服务器内部错误' });
 });
 

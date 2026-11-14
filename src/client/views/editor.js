@@ -1,3 +1,4 @@
+import {openAgentAccess} from '../agent-access.js';
 import {findTables} from '../../plugins/table-model.js';
 import { EditorView, keymap, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor } from '@codemirror/view';
 import { EditorState, Compartment, EditorSelection } from '@codemirror/state';
@@ -854,6 +855,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         applyCompileResult(msg.result, { local: false });
       } else if (msg.type === 'file:changed') {
         refreshTree();
+      } else if(msg.type==='agent:changed'){
+        toast(`${msg.name||'研究 Agent'} 更新了 ${msg.files?.length||0} 个文件`,'ok');
       } else if (msg.type === 'project:engine') {
         project.engine = msg.engine;
         updateEngineStatus();
@@ -1124,6 +1127,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     dropdown(anchor, [
       ...extensionCommands(extensionList, extensionActions, extensionContext),
       { key: 'extensions', label: '插件中心 · 安装与管理', icon: 'grid', onClick: () => openExtensionsManager(user) },
+      ...(canEdit?[{key:'agent-access',label:'连接研究 Agent · API',icon:'key',onClick:()=>openAgentAccess(project)}]:[]),
       { key: 'project-history', label: '项目版本与分支', icon: 'clock', onClick: () => research.openHistory() },
       { key: 'notifications', label: '与我有关的讨论', icon: 'message', onClick: openNotifications },
       { sep: true },

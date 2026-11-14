@@ -39,3 +39,8 @@ Thumbs.db
 
 # 本地工作区元数据
 .workbuddy/
+
+# Generated agent client/documentation and Python caches
+public/agent/
+__pycache__/
+*.pyc

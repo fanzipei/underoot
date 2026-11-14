@@ -8,6 +8,9 @@ import { installModernTeX } from './install-modern-tex.mjs';
 await installModernTeX();
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+fs.mkdirSync(path.join(root,'public/agent'),{recursive:true});
+fs.copyFileSync(path.join(root,'scripts/underoot-agent.py'),path.join(root,'public/agent/underoot-agent.py'));
+fs.copyFileSync(path.join(root,'docs/agent-api.md'),path.join(root,'public/agent/README.md'));
 const outfile = path.join(root, 'public', 'assets', 'app.js');
 const assetsDir = path.dirname(outfile);
 fs.mkdirSync(assetsDir, { recursive: true });

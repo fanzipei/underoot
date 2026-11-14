@@ -4,7 +4,7 @@
 
 一个**可插件扩展、可本地部署的 vibe research 平台**。用 LaTeX 写作与 PDF 审阅作为第一种研究工作流，连接 AI 建议、协作讨论、项目搜索、学术传播和可追溯版本。核心数据保存在本机 `data/`；模型与在线文献检索由用户按需启用。
 
-> 当前版本：**v0.12.0** · 论文审阅、协作与版本工作台。仓库：[fanzipei/underoot](https://github.com/fanzipei/underoot)。
+> 当前版本：**v0.13.0** · 论文审阅、协作与版本工作台。仓库：[fanzipei/underoot](https://github.com/fanzipei/underoot)。
 
 ---
 
@@ -576,3 +576,11 @@ TeX 编辑器默认自动换行，状态栏“自动换行”或 Alt+Z 可切换
 保存由宿主确认，并使用原文件哈希防止覆盖协作修改，历史版本保留。只改单元格时保留原表格格式；样式重建只替换 tabular 区域，caption、label 和正文保持原样。三线表需要主文件加载 `booktabs`，tabularx 需要 `tabularx`；插件显示宏包提示，最终版式以编译 PDF 为准。复杂 multirow、嵌套环境及自定义列不自动重建；带注释或自定义行间规则的表格仅支持单元格编辑。
 
 插件 ID：`underoot.tables`，可在插件中心独立停用。便携源码在 `examples/plugins/tables`，通过 `node scripts/pack-extension.mjs examples/plugins/tables --out tables.zip` 打包；也可在插件中心下载表格编辑器 ZIP。权限仅有 `selection.read`、`documents.read`、`documents.write`，不调用模型。测试：`npm run test:tables`。
+
+### 连接 Codex 等研究 Agent
+
+项目的“更多 → 连接研究 Agent · API”可创建仅授权当前项目的令牌，选择读取、改写/上传图表和服务器编译权限，设置有效期并随时撤销。令牌仅在创建时显示，服务端只保存 SHA-256。不要把账号密码或整个账号会话交给 Agent。
+
+API 支持项目文件清单、源码和图片读取、带原文件哈希的批量更新、服务器编译及 PDF 下载。Agent 修改会同步进在线编辑器，并保留前后快照和历史；作者的实时修改使旧哈希失效，返回 409 后需重新读取并合并，不能盲目覆盖。实验代码在 Agent 自己的环境运行，结果表、插图及报告通过 API 同步回项目。
+
+提供标准库 Python 客户端 `scripts/underoot-agent.py`，也可从连接窗口下载；配置 `UNDEROOT_PROJECT_URL` 与 `UNDEROOT_API_TOKEN` 后即可运行 info、list、read、write、patch、batch、compile、pdf。详见 [Agent API 与工作流](docs/agent-api.md)。测试：`npm run test:agent`。

@@ -1,6 +1,6 @@
 {
   "name": "underoot",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "description": "可插件扩展、可本地部署的 vibe research 协作平台",
@@ -24,7 +24,8 @@
     "test:publishing:studio": "node scripts/test-isolated.mjs --publishing-studio",
     "test:publishing:fit": "node scripts/publishing-fit-unit-test.mjs && node scripts/publishing-standalone-test.mjs && node scripts/publishing-evidence-test.mjs",
     "test:publishing:layout": "node scripts/publishing-layout-quality-test.mjs",
-    "test:tables": "node scripts/tables-unit-test.mjs && node scripts/test-isolated.mjs --tables"
+    "test:tables": "node scripts/tables-unit-test.mjs && node scripts/test-isolated.mjs --tables",
+    "test:agent": "node scripts/test-isolated.mjs --agent-api"
   },
   "keywords": [
     "latex",
