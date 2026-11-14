@@ -1,3 +1,4 @@
+import {tableEditingGutter} from '../table-gutter.js';
 import {openAgentAccess} from '../agent-access.js';
 import {findTables} from '../../plugins/table-model.js';
 import { EditorView, keymap, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor } from '@codemirror/view';
@@ -381,6 +382,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         EditorState.readOnly.of(!canEdit),
         EditorView.editable.of(canEdit),
         lineNumbers(),
+        tableEditingGutter({enabled:()=>!!tableExtension()&&/\.tex$/i.test(activePath||''),onOpen:openHoveredTable}),
         highlightActiveLineGutter(),
         highlightSpecialChars(),
         history(),
@@ -423,7 +425,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
   let tableHintTimer;
   function updateStatus() {
-    clearTimeout(tableHintTimer);tableHintTimer=setTimeout(()=>{const hint=root.querySelector('#table-edit-hint');hint.style.display=enabledExtension(extensionList,'underoot.tables')&&/\.tex$/i.test(activePath||'')&&findTables(view.state.doc.toString()).some(t=>view.state.selection.main.head>=t.from&&view.state.selection.main.head<=t.to)?'':'none';},150);
+    clearTimeout(tableHintTimer);tableHintTimer=setTimeout(()=>{const hint=root.querySelector('#table-edit-hint');hint.style.display=!!tableExtension()&&/\.tex$/i.test(activePath||'')&&findTables(view.state.doc.toString()).some(t=>view.state.selection.main.head>=t.from&&view.state.selection.main.head<=t.to)?'':'none';},150);
     const sel = view.state.selection.main;
     const line = view.state.doc.lineAt(sel.head);
     els.stPos.textContent = `行 ${line.number}, 列 ${sel.head - line.from + 1}`;
@@ -450,7 +452,9 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     getSelection: () => { const selection = view.state.selection.main; return /\.(tex|bib)$/i.test(activePath || '') ? { path: activePath, from: selection.from, to: selection.to } : null; },
     getPdfSelection: () => research.getPdfSelection(),
   };
-  root.querySelector('#table-edit-hint').onclick=()=>{const ext=extensionList.find(x=>x.id==='underoot.tables'&&x.enabled);if(ext)openExtension(ext,ext.contributes.commands[0],extensionContext);};
+  function tableExtension(){return extensionList.find(x=>x.id==='underoot.tables'&&x.enabled)||extensionList.find(x=>x.id==='research.tables'&&x.enabled);}
+  function openHoveredTable(table){const ext=tableExtension();if(!ext||!activePath)return;const quote=view.state.doc.sliceString(table.from,Math.min(table.to,table.from+20000)),target={path:activePath,from:table.from,to:table.from+quote.length,expectedText:quote,kind:'table'};openExtension(ext,ext.contributes.commands[0],{...extensionContext,getSelection:()=>target});}
+  root.querySelector('#table-edit-hint').onclick=()=>{const ext=tableExtension();if(ext)openExtension(ext,ext.contributes.commands[0],extensionContext);};
   const extensionActions = { 'assistant.open': () => research.open(), 'discovery.search': openWorkspaceSearch,
     'publishing.slides': () => research.openDerive('slides'), 'publishing.poster': () => research.openDerive('poster'), 'publishing.chat':()=>research.openDerive('chat'),
     'publishing.template': () => research.openTemplate(),'publishing.templates':()=>openTemplateLibrary(), 'editing.vim':()=>setVim(!vimEnabled) };

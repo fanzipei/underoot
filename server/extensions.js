@@ -159,9 +159,15 @@ extensionsRouter.post('/:id/rpc', handle(async (req, res) => {
     if (!context?.path) result = { path: project.main_file, text: '', from: 0, to: 0 };
     else {
       flushProject(project.id); const text = fs.readFileSync(resolveInside(projectDir(project.id), context.path), 'utf8');
-      const from = Number(context.from); const to = Number(context.to);
-      if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from || to > text.length) throw failure(400, '选区坐标已变化，请重新选择');
-      result = { path: context.path, from, to, text: text.slice(from, to).slice(0, 20000) };
+      let from = Number(context.from), to = Number(context.to);
+      if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) throw failure(400, '选区坐标已变化，请重新选择');
+      if(context.expectedText!==undefined){
+        const quote=context.expectedText;
+        if(typeof quote!=='string'||!quote.length||quote.length>20000||to-from!==quote.length)throw failure(400,'表格定位信息无效');
+        if(text.slice(from,to)!==quote){const at=text.indexOf(quote);if(at<0||text.indexOf(quote,at+1)>=0)throw failure(409,'表格内容已变化或定位不唯一，请重新点击行号旁的编辑按钮');from=at;to=at+quote.length;}
+      }
+      if(to>text.length)throw failure(400,'选区坐标已变化，请重新选择');
+      result = { path: context.path, from, to, text: text.slice(from, to).slice(0, 20000),...(context.expectedText!==undefined&&context.kind==='table'?{kind:'table'}:{}) };
     }
   } else if (method === 'pdf.read') {
     const context = req.body.context?.pdf;

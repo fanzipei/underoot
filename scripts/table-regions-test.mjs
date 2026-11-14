@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {tableRegions,tableAtLine,selectedTableIndex} from '../src/shared/table-regions.js';
+const first=String.raw`\begin{tabular}{lc} Alpha & 1 \\ \end{tabular}`,second=String.raw`\begin{tabularx}{\linewidth}{lX} Beta & 2 \\ \end{tabularx}`;
+let n=0;const check=(label,fn)=>{fn();n++;console.log('✓ '+label);};
+check('detects multiple tables with original UTF-16 source positions',()=>{const s='研究 🔬\n'+first+'\n'+second,regions=tableRegions(s);assert.equal(regions.length,2);assert.equal(regions[1].from,s.indexOf(second));assert.equal(regions[1].source,second);});
+check('a single table owns its float caption and label hover area',()=>{const s='\\begin{table*}\n\\caption{Results}\\label{tab:results}\n'+second+'\n\\end{table*}',r=tableRegions(s)[0];assert.equal(r.hoverFrom,0);assert.equal(r.hoverTo,s.length);assert.equal(tableAtLine([r],15,40),r);});
+check('two tables inside a float do not claim an ambiguous shared caption',()=>{const s='\\begin{table}\n\\caption{Shared}\n'+first+'\n'+second+'\n\\end{table}',r=tableRegions(s);assert.equal(tableAtLine(r,14,30),null);assert.equal(r[0].hoverFrom,r[0].from);});
+check('same-line tables follow actual pointer position rather than line order',()=>{const s=first+' '+second,r=tableRegions(s);assert.equal(tableAtLine(r,0,s.length,r[1].from+10),r[1]);assert.equal(tableAtLine(r,0,s.length,null),null);});
+check('commented and verbatim examples do not offer table editing',()=>{assert.equal(tableRegions('% '+first+'\n\\begin{verbatim}'+second+'\\end{verbatim}').length,0);});
+check('a quoted gutter target opens the second table without moving the caret',()=>{const s=first+'\n'+second;assert.equal(selectedTableIndex(s,{kind:'table',from:s.indexOf(second),text:second}),1);});
+check('a unique quoted table can be relocated after text is inserted above it',()=>{const s=first+'\n'+second,target={kind:'table',from:s.indexOf(second),text:second};assert.equal(selectedTableIndex('New text\n'+s,target),1);});
+check('changed or ambiguous targets fail instead of silently opening another table',()=>{assert.throws(()=>selectedTableIndex(first,{kind:'table',from:0,text:second}),/变化|定位/);assert.throws(()=>selectedTableIndex('prefix '+first+' '+first,{kind:'table',from:0,text:first}),/唯一/);});
+check('ordinary toolbar invocation still follows the source caret',()=>{const s=first+'\n'+second;assert.equal(selectedTableIndex(s,{from:s.indexOf(second)+8}),1);assert.equal(selectedTableIndex(s,{from:0}),0);});
+console.log(`Table hover regions: ${n}/${n} passed`);
