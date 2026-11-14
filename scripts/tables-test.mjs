@@ -22,7 +22,7 @@ Baseline & 0.80 & 10 \\
 Conclusion remains unchanged.
 \end{document}`;
 check('bundled table editor is registered with minimum document permissions',(await req('/api/extensions',owner)).data.extensions.some(e=>e.id==='underoot.tables'&&e.enabled&&e.permissions.length===3));
-const asset=await fetch(BASE+'/extensions/underoot.tables/1.2.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
+const asset=await fetch(BASE+'/extensions/underoot.tables/1.3.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
 check('table editor cannot invoke an undeclared model capability',(await rpc('ai.complete',{instruction:'no'})).status===403);
 await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:source});
 const doc=(await rpc('documents.read',{path:'main.tex'})).data.result,m=parseTable(doc.content);m.rows[1][1].tex='$0.93 \\pm 0.01$';const content=replaceTable(m);
@@ -65,6 +65,17 @@ await req(`/api/projects/${project.id}/file?path=large.tex`,owner,'PUT',{content
 const largeFragment=await readScoped({path:'large.tex',from:large.indexOf(other),to:large.length,source:other});
 check('small table in a large manuscript does not load the full document into the plugin',largeFragment.status===200&&largeFragment.data.result.content===other&&JSON.stringify(largeFragment.data).length<1000);
 for(const variant of ['grid','plain','booktabs','grid-inline','booktabs-tabularx']){const style=variant.split('-')[0],input=variant==='grid-inline'?content.replaceAll('\n',' '):variant==='booktabs-tabularx'?content.replace('\\begin{tabular}{lcc}','\\begin{tabularx}{\\linewidth}[t]{lXX}').replace('\\end{tabular}','\\end{tabularx}'):content;const model=parseTable(input);model.structural=true;model.style=style;model.stretch=1.3;model.padding=8;const result=replaceTable(model),path='table-'+variant+'.tex';check(variant+' style saves to an isolated source file',(await rpc('documents.write',{path,content:result,hash:null},{consent:true})).status===200);const engines=(await req('/api/system/engines',owner)).data.engines;if(engines.some(e=>e.id==='xelatex')){const c=await req(`/api/projects/${project.id}/compile`,owner,'POST',{mainFile:path,engine:'xelatex',force:true});if(!c.data.ok)console.error(c.data.errors);check(variant+' style compiles to a real PDF',c.data.ok);}}
+const complex=String.raw`\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2cm}cc@{}}
+\toprule
+\multirow{2}{*}{Group} & \multicolumn{2}{c}{Results} \\ \cmidrule(lr){2-3}
+ & Score & Cost \\ \midrule
+\textbf{Ours} & $0.93\pm0.01$ & \begin{tabular}{c}10\\12\end{tabular} \\ \bottomrule\end{tabular}`;
+const complexFile='\\documentclass{article}\n\\usepackage{array,booktabs,multirow}\n\\begin{document}\n'+complex+'\n\\end{document}';
+await req(`/api/projects/${project.id}/file?path=complex.tex`,owner,'PUT',{content:complexFile});
+const cf=(await readScoped({path:'complex.tex',from:complexFile.indexOf(complex),to:complexFile.indexOf(complex)+complex.length,source:complex})).data.result,cm=parseTable(cf.content);cm.rows[0][0].tex='New group';cm.rows[2][1].tex='$0.94\\pm0.01$';
+const complexSave=await rpc('documents.table.write',{...cf,before:cf.content,content:replaceTable(cm)},{consent:true});
+check('complex table content-only save preserves wrappers and nested layout',complexSave.status===200&&complexSave.data.result.content===complex.replace('Group','New group').replace('0.93','0.94'));
+if((await req('/api/system/engines',owner)).data.engines.some(e=>e.id==='xelatex')){const compiled=await req(`/api/projects/${project.id}/compile`,owner,'POST',{mainFile:'complex.tex',engine:'xelatex',force:true});if(!compiled.data.ok)console.error(compiled.data.errors);check('edited multirow, custom column and nested table compile to real PDF',compiled.data.ok);}
 const zipResponse=await fetch(BASE+'/api/extensions/examples/tables/download',{headers:{cookie:owner}}),bytes=Buffer.from(await zipResponse.arrayBuffer()),pack=inspectExtensionZip(bytes);check('portable ZIP passes the installation validator',pack.manifest.id==='research.tables'&&new AdmZip(bytes).getEntry('plugin.js'));
 const email=`table-viewer-${Date.now()}@test.local`;await req('/api/auth/register','','POST',{email,name:'Table viewer',password:'TableFixturePass42!'});const users=(await req('/api/admin/users',admin)).data.users,u=users.find(u=>u.email===email);await req('/api/admin/users/'+u.id+'/review',admin,'POST',{status:'active'});const viewer=(await req('/api/auth/login','','POST',{email,password:'TableFixturePass42!'})).cookie;await req(`/api/projects/${project.id}/members`,owner,'POST',{email,role:'viewer'});
 check('viewer can read a table but cannot save it',(await rpc('documents.read',{path:'main.tex'},{},viewer)).status===200&&(await rpc('documents.write',{path:'main.tex',content,hash:saved.hash},{consent:true},viewer)).status===403);

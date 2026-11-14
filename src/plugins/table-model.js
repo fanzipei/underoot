@@ -13,7 +13,7 @@ function group(s,i,open='{',close='}') {
 }
 export function findTables(source) {
  const s=mask(source),re=/\\begin\{(tabular\*?|tabularx)\}/g,tables=[];let m;
- while((m=re.exec(s))){const end=s.indexOf('\\end{'+m[1]+'}',re.lastIndex);if(end<0)continue;
+ while((m=re.exec(s))){const nested=/\\(begin|end)\{(tabular\*?|tabularx)\}/g;nested.lastIndex=re.lastIndex;let depth=1,end=-1,token;while((token=nested.exec(s))){depth+=token[1]==='begin'?1:-1;if(!depth){end=token.index;break;}}if(end<0)continue;
   let from=m.index,to=end+('\\end{'+m[1]+'}').length;
   const lead=source.slice(0,from),start=lead.lastIndexOf('% underoot-table:start');
   if(start>=0&&/^% underoot-table:start\r?\n\\begingroup\s*\\renewcommand\{\\arraystretch\}\{[\d.]+\}\s*\\setlength\{\\tabcolsep\}\{[\d.]+pt\}\s*$/.test(source.slice(start,from))&&!source.slice(start,from).includes('\\endgroup')){
@@ -23,49 +23,60 @@ export function findTables(source) {
  }return tables;
 }
 function columns(spec){
- const clean=spec.replace(/[|\s]/g,'');let cols=[];
- for(let i=0;i<clean.length;){const c=clean[i++];if('lcrX'.includes(c))cols.push(c);else if('pmb'.includes(c)){const g=group(clean,i);cols.push(c+'{'+g.value+'}');i=g.to;}else if(c==='@'||c==='!'){i=group(clean,i).to;}else if(c==='*'){const n=group(clean,i),v=group(clean,n.to);const count=Number(n.value);if(!Number.isInteger(count)||count<1||count>24)throw Error('重复列定义过大');cols.push(...Array.from({length:count},()=>columns(v.value)).flat());i=v.to;}else throw Error('自定义列类型暂不支持可视化编辑，请保留源码');if(cols.length>24)throw Error('可视化编辑最多支持 24 列');}
- if(!cols.length)throw Error('未识别到表格列');return cols;
+ const clean=spec.replace(/\s/g,'');let cols=[],alignments=[],pending='';const add=c=>{cols.push(c);alignments.push(pending||(/^[crS]/.test(c)?(c==='r'?'r':'c'):'l'));pending='';};
+ for(let i=0;i<clean.length;){const c=clean[i++];if(c==='|')continue;if('lcrX'.includes(c))add(c);else if('pmb'.includes(c)){const g=group(clean,i);add(c+'{'+g.value+'}');i=g.to;}else if('@!><'.includes(c)){const g=group(clean,i);if(c==='>')pending=/\\centering\b/.test(g.value)?'c':/\\raggedleft\b/.test(g.value)?'r':/\\raggedright\b/.test(g.value)?'l':pending;i=g.to;}else if(c==='*'){const n=group(clean,i),v=group(clean,n.to),nested=columns(v.value),count=Number(n.value);if(!Number.isInteger(count)||count<1||count>24)throw Error('重复列定义过大');for(let k=0;k<count;k++){cols.push(...nested);alignments.push(...nested.alignments);}i=v.to;}else if(/[A-Za-z]/.test(c)){add(c);while(clean[i]==='{'||clean[i]==='[')i=group(clean,i,clean[i],clean[i]==='{'?'}':']').to;}else throw Error('无法安全识别列定义，请保留源码');if(cols.length>24)throw Error('可视化编辑最多支持 24 列');}
+ if(!cols.length)throw Error('未识别到表格列');Object.defineProperty(cols,'alignments',{value:alignments});return cols;
 }
+const safeEnvs=new Set(['tabular','tabular*','tabularx','array','aligned','alignedat','gathered','matrix','pmatrix','bmatrix','smallmatrix','cases','minipage','math','displaymath']);
 export function parseTable(source,table=findTables(source)[0]){
  if(!table)throw Error('未找到 tabular / tabularx 表格');
  const s=mask(source);let at=table.begin+('\\begin{'+table.env+'}').length;
  if(s.slice(at).trimStart().startsWith('['))at=group(s,at,'[',']').to;
  let width='';if(table.env!=='tabular'){const g=group(s,at);width=source.slice(g.from+1,g.to-1);at=g.to;if(s.slice(at).trimStart().startsWith('['))at=group(s,at,'[',']').to;}
- const spec=group(s,at),cols=columns(spec.value),start=spec.to,end=table.end;
- const body=s.slice(start,end);
- if(/\\(?:multirow|begin|end|input|include|catcode|verb|omit|span|noalign|hhline|hlinewd)\b/.test(body))throw Error('此表包含跨行、嵌套环境或自定义布局；请使用源码，原表不会被改写');
- const rows=[];let cells=[],cellStart=start,depth=0,math=false;
- const addCell=stop=>{let from=cellStart,to=stop;while(/\s/.test(s[from]||'')&&from<to)from++;while(/\s/.test(s[to-1]||'')&&to>from)to--;let raw=source.slice(from,to),span=1,align='';
-  if(/^\\multicolumn\b/.test(raw)){let i='\\multicolumn'.length;const n=group(raw,i),a=group(raw,n.to),v=group(raw,a.to);if(raw.slice(v.to).trim())throw Error('合并列后还有额外指令，请用源码编辑');span=Number(n.value);align=a.value;if(!Number.isInteger(span)||span<1||span>cols.length||!/^\|?[lcr]\|?$/.test(align))throw Error('复杂合并列暂不支持');raw=v.value;}
-  cells.push({tex:raw,original:raw,from,to,span,align,multicolumn:!!align});};
+ const spec=group(s,at),cols=columns(spec.value),start=spec.to,end=table.end,body=s.slice(start,end);
+ if(/\\(?:input|include|catcode|verb|omit|span)\b/.test(body))throw Error('此表包含无法安全定位的指令，请使用源码，原表不会被改写');
+ const rows=[],rules=[];let cells=[],cellStart=start,depth=0,math=false,envs=[];
+ const addCell=stop=>{let from=cellStart,to=stop;while(/\s/.test(s[from]||'')&&from<to)from++;while(/\s/.test(s[to-1]||'')&&to>from)to--;
+  let a=from,b=to,span=1,align='',rowSpan=1,multicolumn=false;
+  // Keep all layout wrappers byte-for-byte and patch their innermost content only.
+  for(let count=0;count<4;count++){
+   const raw=s.slice(a,b);let match;
+   if(/^\\multicolumn\b/.test(raw)){const n=group(s,a+12),al=group(s,n.to),v=group(s,al.to);if(s.slice(v.to,b).trim())break;span=Number(n.value);align=al.value;multicolumn=true;if(!Number.isInteger(span)||span<1||span>cols.length)throw Error('合并列范围无效');a=v.from+1;b=v.to-1;continue;}
+   if(/^\\multirow\b/.test(raw)){let i=a+9;if(s.slice(i,b).trimStart().startsWith('['))i=group(s,i,'[',']').to;const n=group(s,i);i=n.to;if(s.slice(i,b).trimStart().startsWith('['))i=group(s,i,'[',']').to;const w=group(s,i);i=w.to;if(s.slice(i,b).trimStart().startsWith('['))i=group(s,i,'[',']').to;const v=group(s,i);if(s.slice(v.to,b).trim())break;rowSpan=Number(n.value);if(!Number.isInteger(rowSpan)||!rowSpan||Math.abs(rowSpan)>200)throw Error('合并行范围无效');a=v.from+1;b=v.to-1;continue;}
+   if((match=/^\\cellcolor(?:\[[^\]]*\])?\{[^{}]*\}/.exec(raw))){a+=match[0].length;continue;}
+   break;
+  }
+  const raw=source.slice(a,b);cells.push({tex:raw,original:raw,from:a,to:b,span,align,multicolumn,rowSpan,outer:source.slice(from,to)});
+ };
  for(let i=start;i<end;i++){
   const c=s[i];if(c==='\\'){
-   const rule=/^\\(?:toprule|midrule|bottomrule|hline|addlinespace|cline|cmidrule)\b(?:\([^)]*\))?(?:\[[^\]]*\])?(?:\{[\d-]+\})?/.exec(s.slice(i));
-   if(!depth&&rule){if(s.slice(cellStart,i).trim())throw Error('表格行间指令位置不支持');i+=rule[0].length-1;cellStart=i+1;continue;}
-   if(s[i+1]==='\\'&&!depth&&!math){addCell(i);rows.push(cells);cells=[];i++;if(s[i+1]==='*')i++;if(s[i+1]==='[')i=group(s,i+1,'[',']').to-1;cellStart=i+1;continue;}i++;continue;
+   const env=/^\\(begin|end)\{([^{}]+)\}/.exec(s.slice(i));if(env){if(!safeEnvs.has(env[2]))throw Error('嵌套环境 '+env[2]+' 暂不支持安全内容编辑');if(env[1]==='begin')envs.push(env[2]);else if(envs.pop()!==env[2])throw Error('嵌套环境未闭合');i+=env[0].length-1;continue;}
+   const rule=/^\\(toprule|midrule|bottomrule|hline|addlinespace|cline|cmidrule|hhline|hlinewd|noalign|rowcolor)\b(?:\([^)]*\))?(?:\[[^\]]*\])?/.exec(s.slice(i));
+   if(!depth&&!envs.length&&rule){if(s.slice(cellStart,i).trim())throw Error('表格行间指令位置不支持');let to=i+rule[0].length,args='';if(s.slice(to,end).trimStart().startsWith('{')){const g=group(s,to);args=g.value;to=g.to;}rules.push({row:rows.length,kind:rule[1],args});i=to-1;cellStart=to;continue;}
+   if((s[i+1]==='\\'||/^\\tabularnewline\b/.test(s.slice(i)))&&!depth&&!math&&!envs.length){addCell(i);rows.push(cells);cells=[];i+=s[i+1]==='\\'?1:'\\tabularnewline'.length-1;if(s[i+1]==='*')i++;if(s[i+1]==='[')i=group(s,i+1,'[',']').to-1;cellStart=i+1;continue;}i++;continue;
   }
-  if(c==='$')math=!math;
-  if(c==='{')depth++;if(c==='}')depth--;
-  if(depth<0)throw Error('表格花括号不平衡');
-  if(c==='&'&&!depth&&!math){addCell(i);cellStart=i+1;}
+  if(c==='$')math=!math;if(c==='{')depth++;if(c==='}')depth--;if(depth<0)throw Error('表格花括号不平衡');if(c==='&'&&!depth&&!math&&!envs.length){addCell(i);cellStart=i+1;}
  }
- if(depth||math)throw Error('单元格公式或花括号未闭合');
+ if(depth||math||envs.length)throw Error('单元格公式、环境或花括号未闭合');
  if(s.slice(cellStart,end).trim()||cells.length){addCell(end);rows.push(cells);}
  if(!rows.length||rows.length>200||rows.some(r=>r.reduce((n,c)=>n+c.span,0)!==cols.length))throw Error('各行列数不一致或表格过大，请用源码检查');
+ const occupied=Array.from({length:rows.length},()=>Array(cols.length).fill(null));
+ rows.forEach((row,r)=>{let col=0;for(const cell of row){cell.col=col;const owner=occupied[r][col];if(owner){if(cell.tex.trim()||Array.from({length:cell.span},(_,k)=>occupied[r][col+k]).some(x=>x!==owner))throw Error('跨行单元格与其他内容重叠，请使用源码');cell.covered=true;cell.owner=owner;}
+  if(cell.rowSpan>1){if(r+cell.rowSpan>rows.length)throw Error('跨行范围超过表格行数');for(let rr=r+1;rr<r+cell.rowSpan;rr++)for(let cc=col;cc<col+cell.span;cc++){if(occupied[rr][cc])throw Error('跨行范围重叠');occupied[rr][cc]=cell;}}
+  col+=cell.span;}});
  const comments=/(?<!\\)%/.test(source.slice(start,end));
- const custom=/>|<|!|@|\*/.test(spec.value)||/\\(?:cmidrule|cline|addlinespace)\b/.test(body)||comments;
+ const custom=/>|<|!|@|\*/.test(spec.value)||cols.some(c=>!/^([lcrX]|[pmb]\{.*\})$/.test(c))||/\\(?:multirow|begin|end|cmidrule|cline|addlinespace|hhline|hlinewd|noalign|rowcolor|cellcolor)\b/.test(body)||comments||rows.some(r=>r.some(c=>c.multicolumn&&!/^\|?[lcr]\|?$/.test(c.align)));
  const saved=source.slice(table.from,table.begin),stretch=/\\renewcommand\{\\arraystretch\}\{([\d.]+)\}/.exec(saved),padding=/\\setlength\{\\tabcolsep\}\{([\d.]+)pt\}/.exec(saved);
- return{...table,fullSource:source,header:source.slice(table.begin,spec.from),rows,cols,spec:source.slice(spec.from+1,spec.to-1),width,bodyStart:start,bodyEnd:end,custom,style:/\\toprule\b/.test(body)?'booktabs':/\\hline\b/.test(body)?'grid':'plain',stretch:Number(stretch?.[1]||1),padding:Number(padding?.[1]||6),structural:false};
+ return{...table,fullSource:source,header:source.slice(table.begin,spec.from),rows,cols,columnAlignments:cols.alignments,rules,spec:source.slice(spec.from+1,spec.to-1),width,bodyStart:start,bodyEnd:end,custom,style:/\\toprule\b/.test(body)?'booktabs':/\\hline\b/.test(body)?'grid':'plain',stretch:Number(stretch?.[1]||1),padding:Number(padding?.[1]||6),structural:false};
 }
 export function escapeCell(text){return String(text).replace(/[\\{}$&#_%~^]/g,c=>({'\\':'\\textbackslash{}','{':'\\{','}':'\\}','$':'\\$','&':'\\&','#':'\\#','_':'\\_','%':'\\%','~':'\\textasciitilde{}','^':'\\textasciicircum{}'}[c]));}
 export function validateCell(s){
- if(s.length>10000||/(?<!\\)%|\\(?:input|include|write|openout|read|begin|end)\b/.test(s))throw Error('单元格请勿插入注释、外部文件或环境');let depth=0,math=false;
- for(let i=0;i<s.length;i++){if(s[i]==='\\'){if(s[i+1]==='\\'&&!depth)throw Error('单元格内换行请用 \\makecell{...}');i++;continue;}if(s[i]==='{')depth++;if(s[i]==='}'&&--depth<0)throw Error('单元格花括号未闭合');if(s[i]==='$')math=!math;if(s[i]==='&'&&!depth&&!math)throw Error('请将单元格中的 & 写为 \\&');}if(depth||math)throw Error('单元格花括号或公式未闭合');
+ if(s.length>10000||/(?<!\\)%|\\(?:input|include|write|openout|read|catcode|verb)\b/.test(s))throw Error('单元格请勿插入注释、外部文件或执行指令');let depth=0,math=false,envs=[];
+ for(let i=0;i<s.length;i++){if(s[i]==='\\'){const env=/^\\(begin|end)\{([^{}]+)\}/.exec(s.slice(i));if(env){if(!safeEnvs.has(env[2]))throw Error('此嵌套环境暂不支持');if(env[1]==='begin')envs.push(env[2]);else if(envs.pop()!==env[2])throw Error('单元格环境未闭合');i+=env[0].length-1;continue;}if(s[i+1]==='\\'&&!depth&&!envs.length)throw Error('单元格内换行请用 \\makecell{...}');i++;continue;}if(s[i]==='{')depth++;if(s[i]==='}'&&--depth<0)throw Error('单元格花括号未闭合');if(s[i]==='$')math=!math;if(s[i]==='&'&&!depth&&!math&&!envs.length)throw Error('请将单元格中的 & 写为 \\&');}if(depth||math||envs.length)throw Error('单元格花括号、公式或环境未闭合');
 }
 export function serializeTable(model){
  for(const row of model.rows)for(const c of row)if(model.structural||c.tex!==c.original)validateCell(c.tex);
- if(!model.structural){let out=model.fullSource.slice(model.from,model.to);const edits=model.rows.flat().filter(c=>c.tex!==c.original).sort((a,b)=>b.from-a.from);for(const c of edits){const value=c.span>1||c.multicolumn?'\\multicolumn{'+c.span+'}{'+c.align+'}{'+c.tex+'}':c.tex;out=out.slice(0,c.from-model.from)+value+out.slice(c.to-model.from);}return out;}
+ if(!model.structural){let out=model.fullSource.slice(model.from,model.to);const edits=model.rows.flat().filter(c=>c.tex!==c.original).sort((a,b)=>b.from-a.from);for(const c of edits){const value=c.tex;out=out.slice(0,c.from-model.from)+value+out.slice(c.to-model.from);}return out;}
  if(model.custom)throw Error('此表含自定义列、行间规则或注释；为保留原稿，仅允许编辑单元格');
  if(!model.rows.length||!model.cols.length||model.rows.some(r=>r.reduce((n,c)=>n+c.span,0)!==model.cols.length))throw Error('表格列数不一致');
  if(!['booktabs','grid','plain'].includes(model.style)||!Number.isFinite(model.stretch)||!Number.isFinite(model.padding)||model.stretch<.8||model.stretch>2||model.padding<2||model.padding>16)throw Error('样式参数超出范围');
