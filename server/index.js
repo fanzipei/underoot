@@ -23,6 +23,7 @@ import { extensionsRouter, extensionAssets } from './extensions.js';
 import { wasmRouter } from './wasm.js';
 import { publishingTemplatesRouter } from './publishing-templates.js';
 import {agentApiRouter,agentTokensRouter} from './agent-api.js';
+import {projectMcpRouter} from './project-mcp.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -39,6 +40,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/projects/:id/agent-tokens',agentTokensRouter);
 app.use('/api/agent/v1',agentApiRouter);
+app.use('/api/mcp/v1/projects/:id',projectMcpRouter);
 app.use('/api/system', systemRouter);
 app.use('/api/workspace', workspaceRouter);
 app.use('/api/extensions', extensionsRouter);

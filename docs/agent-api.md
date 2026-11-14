@@ -23,7 +23,7 @@ python underoot-agent.py compile --engine xelatex
 python underoot-agent.py pdf --out report.pdf
 ```
 
-In PowerShell set the URL with `$env:UNDEROOT_PROJECT_URL='...'` and the token through `$env:UNDEROOT_API_TOKEN` or the agent's secret store. The same Python commands work. These are generic CLI tools for agents that can run shell commands; this release does not install or configure a Codex/MCP server automatically.
+In PowerShell set the URL with `$env:UNDEROOT_PROJECT_URL='...'` and the token through `$env:UNDEROOT_API_TOKEN` or the agent's secret store. The same Python commands work. These CLI tools work in agents with shell access. Project MCP and generated Codex configuration are also available; see [MCP connection](project-mcp.md).
 
 Suggested agent instruction:
 

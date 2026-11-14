@@ -1,0 +1,20 @@
+import {codexMcpConfig} from '../shared/codex-mcp-config.js';
+import {toast} from './ui.js';
+
+export function mountMcpConnection(host,project){
+ host.innerHTML=`<h4>Codex MCP 连接</h4><p class="src-note"><a href="/agent/project-mcp.md" target="_blank" rel="noopener">MCP 与 Codex 连接说明</a></p><label>连接方式 <select class="input" id="mcp-mode" aria-label="MCP 连接方式"><option value="http">远程 HTTP · 无需安装桥接器</option><option value="stdio">本地桥接 · 可直接上传本地图片</option></select></label><div id="mcp-local" style="display:none"><p class="src-note">下载 <a href="/agent/underoot-mcp.py" download>本地 MCP 桥接器</a>，填写脚本和实验目录的绝对路径。只允许上传该实验目录内的图片；无需额外 Python 依赖。</p><label>Python 命令 <select class="input" id="mcp-python"><option value="python">python</option><option value="python3">python3</option><option value="py">py（Windows）</option></select></label><label>桥接脚本路径<input class="input" id="mcp-script" aria-label="桥接脚本绝对路径" placeholder="C:/Tools/underoot-mcp.py 或 /home/me/underoot-mcp.py"></label><label>本地实验目录<input class="input" id="mcp-workspace" aria-label="本地实验目录" placeholder="C:/Research/experiment 或 /home/me/experiment"></label></div><div class="assistant-buttons"><button class="btn btn-sm" id="mcp-generate">生成 / 更新 Codex 配置</button><button class="btn btn-sm" id="mcp-copy">复制配置</button><button class="btn btn-sm" id="mcp-download">下载 TOML</button></div><textarea class="input" id="mcp-config" readonly rows="8" aria-label="Codex MCP 配置"></textarea><p class="src-note" id="mcp-setup"></p><p class="src-note" id="mcp-check" role="status">创建令牌后自动进行 MCP 握手与工具发现自检，不改动论文。</p>`;
+ const $=id=>host.querySelector('#'+id);let config;
+ function generate(){config=codexMcpConfig({origin:location.origin,projectId:project.id,mode:$('mcp-mode').value,python:$('mcp-python').value,scriptPath:$('mcp-script').value.trim(),workspace:$('mcp-workspace').value.trim()});$('mcp-config').value=config.toml;$('mcp-setup').textContent=`将配置合并到 ~/.codex/config.toml（保留原有内容）或受信任项目的 .codex/config.toml。令牌环境变量：${config.tokenEnv}。令牌需进入启动 Codex 的进程环境，已运行的 Codex 不会读取另一终端新增的环境变量；设置后重新启动或连接。配置本身不含密钥。${config.mode==='http'?'远程 HTTP 上传图表接收 Base64；本地桥接模式可直接传入图片路径。':''}`;return config;}
+ $('mcp-mode').onchange=()=>{$('mcp-local').style.display=$('mcp-mode').value==='stdio'?'block':'none';try{generate();}catch{config=null;$('mcp-config').value='请填写本地脚本和实验目录的绝对路径，再生成配置。';}};
+ $('mcp-generate').onclick=()=>{try{generate();toast('Codex MCP 配置已生成','ok');}catch(err){toast(err.message,'err');}};
+ $('mcp-copy').onclick=async()=>{try{generate();try{await navigator.clipboard.writeText(config.toml);toast('配置已复制，不含令牌','ok');}catch{$('mcp-config').select();toast('请按 Ctrl+C 复制配置','ok');}}catch(err){toast(err.message,'err');}};
+ $('mcp-download').onclick=()=>{try{generate();const url=URL.createObjectURL(new Blob([config.toml],{type:'text/plain;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=config.name+'.codex.toml';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(err){toast(err.message,'err');}};
+ generate();
+ async function check(token){
+  $('mcp-check').textContent='正在验证 MCP 握手和工具列表…';
+  const call=async(method,params,id)=>{const response=await fetch(config.url,{method:'POST',credentials:'omit',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',Accept:'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25'},body:JSON.stringify({jsonrpc:'2.0',id,method,...(params?{params}:{})}),signal:AbortSignal.timeout(20000)});const body=await response.json();if(!response.ok||body.error)throw Error(typeof body.error==='string'?body.error:body.error?.message||'HTTP '+response.status);return body.result;};
+  try{await call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'underoot-setup',version:'1.0.0'}},1);const result=await call('tools/list',null,2);$('mcp-check').textContent=`远程 MCP 自检通过 · ${result.tools.length} 个工具可用：${result.tools.map(t=>t.name).join('、')}。本地桥接模式在实验机启动后还提供本地图片上传和文件下载。`;}
+  catch(err){$('mcp-check').textContent='令牌已创建，但 MCP 自检未通过：'+err.message+'。请检查连接地址；无需重复创建令牌。';}
+ }
+ return{generate,check,clear:()=>{$('mcp-check').textContent='令牌已撤销；使用此令牌的 MCP 新请求将被拒绝。';}};
+}

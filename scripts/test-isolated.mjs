@@ -24,6 +24,7 @@ const env = {
   LATEXSTUDIO_ADMIN_EMAIL: 'admin@latex.studio', ADMIN_EMAIL: 'admin@latex.studio',
   LATEXSTUDIO_ADMIN_PASSWORD: crypto.randomBytes(24).toString('base64url'),
 };
+const mcp=process.argv.includes('--mcp');
 const agentApi=process.argv.includes('--agent-api');
 const tables=process.argv.includes('--tables');
 const pdfAnchors=process.argv.includes('--pdf-anchors');
@@ -52,7 +53,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (!ready) throw new Error('测试服务启动超时');
-  const suite = spawn(process.execPath, [agentApi?'scripts/agent-api-test.mjs':tables?'scripts/tables-test.mjs':pdfAnchors?'scripts/pdf-anchor-test.mjs':studio ? 'scripts/publishing-studio-test.mjs' : modernWasm ? 'scripts/modern-wasm-test.mjs' : templates ? 'scripts/templates-test.mjs' : economy ? 'scripts/assistant-economy-test.mjs' : publishing ? 'scripts/publishing-test.mjs' : platform ? 'scripts/platform-test.mjs' : research ? 'scripts/research-test.mjs' : 'scripts/smoke-test.mjs'], { cwd: root, env, windowsHide: true, stdio: 'inherit' });
+  const suite = spawn(process.execPath, [mcp?'scripts/mcp-test.mjs':agentApi?'scripts/agent-api-test.mjs':tables?'scripts/tables-test.mjs':pdfAnchors?'scripts/pdf-anchor-test.mjs':studio ? 'scripts/publishing-studio-test.mjs' : modernWasm ? 'scripts/modern-wasm-test.mjs' : templates ? 'scripts/templates-test.mjs' : economy ? 'scripts/assistant-economy-test.mjs' : publishing ? 'scripts/publishing-test.mjs' : platform ? 'scripts/platform-test.mjs' : research ? 'scripts/research-test.mjs' : 'scripts/smoke-test.mjs'], { cwd: root, env, windowsHide: true, stdio: 'inherit' });
   const [code] = await once(suite, 'exit');
   process.exitCode = code ?? 1;
 } finally {

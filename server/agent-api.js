@@ -55,18 +55,22 @@ function safeFile(project,rel){
 function readFile(project,rel){const full=safeFile(project,rel);if(!fs.existsSync(full)||!fs.statSync(full).isFile())throw failure(404,'文件不存在');const size=fs.statSync(full).size,binary=BINARY.has(path.extname(rel).toLowerCase());if(size>(binary?8:2)*1024*1024)throw failure(413,'读取上限：文本 2 MB，图片/PDF 8 MB');const b=fs.readFileSync(full);if(!binary&&(b.includes(0)||!Buffer.from(b.toString('utf8')).equals(b)))throw failure(400,'此文件不是 UTF-8 文本');return{path:rel,hash:digest(b),size,encoding:binary?'base64':'utf8',content:b.toString(binary?'base64':'utf8')};}
 function fileList(project){const result=[];let bytes=0;const walk=(dir,prefix='')=>{for(const f of fs.readdirSync(dir,{withFileTypes:true})){if(f.name.startsWith('.')||f.isSymbolicLink())continue;const rel=prefix+f.name;if(f.isDirectory()){walk(path.join(dir,f.name),rel+'/');continue;}if(!f.isFile()||!TEXT.has(path.extname(rel).toLowerCase())&&!BINARY.has(path.extname(rel).toLowerCase()))continue;const full=safeFile(project,rel),size=fs.statSync(full).size;bytes+=size;if(result.length>=4000||bytes>120*1024*1024)throw failure(413,'项目文件清单上限为 4000 文件 / 120 MB');result.push({path:rel,size,hash:digest(fs.readFileSync(full)),encoding:BINARY.has(path.extname(rel).toLowerCase())?'base64':'utf8'});}};walk(projectDir(project.id));return result.sort((a,b)=>a.path.localeCompare(b.path));}
 export const agentApiRouter=express.Router();
-agentApiRouter.use((req,res,next)=>{res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');try{
+export function requireAgent(req,res,next){res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');try{
  limit('ip:'+req.ip,240);const auth=req.headers.authorization||'';if(!/^Bearer uro_agent_[A-Za-z0-9_-]{43}$/.test(auth))throw failure(401,'请使用项目 Agent Bearer 令牌');
  const t=db.prepare('SELECT * FROM agent_tokens WHERE token_hash=?').get(digest(auth.slice(7))),u=t&&getUserById(t.user_id),role=t&&memberRole(t.project_id,t.user_id);
  if(!t||t.revoked_at||t.expires_at<=Date.now()||!u||u.disabled||u.status!=='active'||!role)throw failure(401,'令牌已失效、过期或项目访问权已撤销');
  limit('token:'+t.id,120);req.agent=t;req.user=u;req.agentRole=role;req.agentScopes=JSON.parse(t.scopes);db.prepare('UPDATE agent_tokens SET last_used_at=? WHERE id=?').run(Date.now(),t.id);next();
- }catch(e){next(e);}});
+ }catch(e){next(e);}}
+agentApiRouter.use(requireAgent);
 agentApiRouter.use('/projects/:id',(req,res,next)=>{if(req.params.id!==req.agent.project_id)return res.status(403).json({error:'此令牌仅授权指定项目'});req.project=db.prepare('SELECT * FROM projects WHERE id=?').get(req.params.id);next();});
-const scope=name=>(req,_res,next)=>{if(!req.agentScopes.includes(name)||name!=='read'&&!editRole(req.agentRole))return next(failure(403,'令牌或当前成员角色未授权此操作'));if(name!=='read')try{limit(name+':'+req.agent.id,name==='compile'?3:20);}catch(e){return next(e);}next();};
-agentApiRouter.get('/projects/:id',scope('read'),(req,res)=>res.json({apiVersion:1,project:{id:req.project.id,name:req.project.name,mainFile:req.project.main_file,engine:req.project.engine||'auto'},scopes:req.agentScopes,expiresAt:req.agent.expires_at}));
-agentApiRouter.get('/projects/:id/files',scope('read'),handle((req,res)=>{flushProject(req.project.id);res.json({files:fileList(req.project)});}));
-agentApiRouter.get('/projects/:id/file',scope('read'),handle((req,res)=>{flushProject(req.project.id);const f=readFile(req.project,req.query.path);res.setHeader('ETag','"'+f.hash+'"');res.json(f);}));
-agentApiRouter.post('/projects/:id/changes',scope('write'),handle((req,res)=>{
+export const requireAgentScope=name=>(req,_res,next)=>{if(!req.agentScopes.includes(name)||name!=='read'&&!editRole(req.agentRole))return next(failure(403,'令牌或当前成员角色未授权此操作'));if(name!=='read')try{limit(name+':'+req.agent.id,name==='compile'?3:20);}catch(e){return next(e);}next();};
+const scope=requireAgentScope;
+export const agentOperations={};
+function operation(name,fn){agentOperations[name]=async req=>{let result;await fn(req,{json:value=>{result=value;return value;},setHeader:()=>{}});return result;};return handle(fn);}
+agentApiRouter.get('/projects/:id',scope('read'),operation('project_info',(req,res)=>res.json({apiVersion:1,project:{id:req.project.id,name:req.project.name,mainFile:req.project.main_file,engine:req.project.engine||'auto'},scopes:req.agentScopes,expiresAt:req.agent.expires_at})));
+agentApiRouter.get('/projects/:id/files',scope('read'),operation('list_files',(req,res)=>{flushProject(req.project.id);res.json({files:fileList(req.project)});}));
+agentApiRouter.get('/projects/:id/file',scope('read'),operation('read_file',(req,res)=>{flushProject(req.project.id);const f=readFile(req.project,req.query.path);res.setHeader('ETag','"'+f.hash+'"');res.json(f);}));
+agentApiRouter.post('/projects/:id/changes',scope('write'),operation('write_files',(req,res)=>{
  if(isCompiling(req.project.id))throw failure(409,'项目正在编译，请完成后重试');flushProject(req.project.id);
  const files=req.body?.files,title=typeof req.body?.message==='string'?req.body.message.trim().slice(0,160):'更新报告';
  if(!Array.isArray(files)||!files.length||files.length>50)throw failure(400,'每批需包含 1–50 个文件');const seen=new Set();let total=0;
@@ -86,7 +90,7 @@ agentApiRouter.post('/projects/:id/changes',scope('write'),handle((req,res)=>{
  for(const c of changed){if(!c.binary){syncExternalWrite(req.project.id,c.path,c.buffer.toString('utf8'));recordVersion({projectId:req.project.id,path:c.path,content:c.buffer.toString('utf8'),authorId:req.user.id,force:true});}broadcastProject(req.project.id,{type:'file:changed',path:c.path});}
  touchProject(req.project.id);const after=snapshot(req.project.id,req.user.id,'Agent '+req.agent.name+' · '+title,'agent',true),detail={message:title,beforeRevision:before.id,revision:after.id,files:changed.map(c=>({path:c.path,beforeHash:c.before?digest(c.before):null,hash:c.hash,size:c.buffer.length}))};event(req.project,req.agent,'write',detail);broadcastProject(req.project.id,{type:'agent:changed',name:req.agent.name,files:detail.files.map(f=>f.path)});res.json({ok:true,...detail});
 }));
-agentApiRouter.post('/projects/:id/compile',scope('compile'),handle(async(req,res)=>{
+agentApiRouter.post('/projects/:id/compile',scope('compile'),operation('compile',async(req,res)=>{
  if(isCompiling(req.project.id))throw failure(409,'项目正在编译，请稍后重试');const main=req.body?.mainFile||req.project.main_file;safeFile(req.project,main);if(!main.endsWith('.tex'))throw failure(400,'主文件必须为 .tex');const engine=req.body?.engine||req.project.engine||'auto';if(!['auto','xelatex','pdflatex','lualatex','latexmk','tectonic'].includes(engine))throw failure(400,'Agent 编译仅支持服务器引擎，请明确选择 xelatex 等引擎');
  flushProject(req.project.id);broadcastProject(req.project.id,{type:'compile:start',by:'Agent '+req.agent.name,at:Date.now()});
  let raw;try{raw=await compileProject({projectId:req.project.id,mainFile:main,engine,timeout:60000});}catch(e){raw={ok:false,errors:[{message:e.message}],log:e.message};}

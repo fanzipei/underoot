@@ -4,7 +4,7 @@
 
 一个**可插件扩展、可本地部署的 vibe research 平台**。用 LaTeX 写作与 PDF 审阅作为第一种研究工作流，连接 AI 建议、协作讨论、项目搜索、学术传播和可追溯版本。核心数据保存在本机 `data/`；模型与在线文献检索由用户按需启用。
 
-> 当前版本：**v0.13.0** · 论文审阅、协作与版本工作台。仓库：[fanzipei/underoot](https://github.com/fanzipei/underoot)。
+> 当前版本：**v0.14.0** · 论文审阅、协作与版本工作台。仓库：[fanzipei/underoot](https://github.com/fanzipei/underoot)。
 
 ---
 
@@ -584,3 +584,9 @@ TeX 编辑器默认自动换行，状态栏“自动换行”或 Alt+Z 可切换
 API 支持项目文件清单、源码和图片读取、带原文件哈希的批量更新、服务器编译及 PDF 下载。Agent 修改会同步进在线编辑器，并保留前后快照和历史；作者的实时修改使旧哈希失效，返回 409 后需重新读取并合并，不能盲目覆盖。实验代码在 Agent 自己的环境运行，结果表、插图及报告通过 API 同步回项目。
 
 提供标准库 Python 客户端 `scripts/underoot-agent.py`，也可从连接窗口下载；配置 `UNDEROOT_PROJECT_URL` 与 `UNDEROOT_API_TOKEN` 后即可运行 info、list、read、write、patch、batch、compile、pdf。详见 [Agent API 与工作流](docs/agent-api.md)。测试：`npm run test:agent`。
+
+### 项目 MCP 与 Codex 一键连接配置
+
+在“更多 → 连接研究 Agent · API”选择权限，点击“创建令牌并生成 Codex 配置”。默认远程 HTTP 无需桥接安装；可复制/下载 TOML，按界面提示设置项目专属令牌环境变量，并将配置合并到 Codex 配置中。界面会实际检查 MCP 握手和工具发现；生成的 TOML 不包含密钥，也不会自动覆盖已有 Codex 设置。
+
+如需直接按路径上传实验图，切换本地桥接模式，下载 `underoot-mcp.py`，填写本机脚本和实验目录的绝对路径。Python 标准库桥接器仅访问显式实验目录，上传不向模型暴露 Base64，下载拒绝覆盖已有文件。两种方式都沿用项目权限、哈希冲突保护、协作同步和版本历史。详见 [项目 MCP 与 Codex 连接](docs/project-mcp.md)。测试：`npm run test:mcp`。
