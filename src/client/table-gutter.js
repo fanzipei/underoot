@@ -32,7 +32,8 @@ export function tableEditingGutter({enabled,onOpen}){
    const height=p.y-this.view.documentTop,block=this.view.lineBlockAtHeight(height);if(height<block.top||height>=block.bottom){this.set(null);return;}const line=this.view.state.doc.lineAt(block.from);
    if(p.inGutter&&this.active?.line===line.from)return;
    const position=p.inGutter?null:this.view.posAtCoords({x:p.x,y:p.y},false),table=tableAtLine(this.tables,line.from,line.to,position);
-   this.set(table?{table,line:line.from}:null);
+   const anchor=table?this.view.state.doc.lineAt(table.from).from:null;
+   this.set(table&&(!p.inGutter||line.from===anchor)?{table,line:anchor}:null);
   }
   exposeGutter(){
    // CodeMirror hides its decorative gutters as one group. Expose this real

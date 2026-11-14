@@ -29,7 +29,8 @@
     addComment: (comment) => request('comments.add', comment), notify: (message) => request('ui.notify', { message }),
     templates:Object.freeze({list:()=>request('publishing.templates.list'),register:(template)=>request('publishing.templates.register',{template}),extractPdf:(options={})=>request('publishing.templates.extract',options)}),
     documents: Object.freeze({ list: () => request('documents.read'), read: (path) => request('documents.read', { path }),
-      write: (document) => request('documents.write', document), convert: (document) => request('documents.convert', document) }),
+      write: (document) => request('documents.write', document), convert: (document) => request('documents.convert', document),
+      readTable: () => request('documents.table.read'), writeTable: (table) => request('documents.table.write',table) }),
     storage: Object.freeze({ get: async (key) => (await request('storage.get', { key })).value,
       set: (key, value) => request('storage.set', { key, value }) }),
   });

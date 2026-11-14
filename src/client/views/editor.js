@@ -453,8 +453,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     getPdfSelection: () => research.getPdfSelection(),
   };
   function tableExtension(){return extensionList.find(x=>x.id==='underoot.tables'&&x.enabled)||extensionList.find(x=>x.id==='research.tables'&&x.enabled);}
-  function openHoveredTable(table){const ext=tableExtension();if(!ext||!activePath)return;const quote=view.state.doc.sliceString(table.from,Math.min(table.to,table.from+20000)),target={path:activePath,from:table.from,to:table.from+quote.length,expectedText:quote,kind:'table'};openExtension(ext,ext.contributes.commands[0],{...extensionContext,getSelection:()=>target});}
-  root.querySelector('#table-edit-hint').onclick=()=>{const ext=tableExtension();if(ext)openExtension(ext,ext.contributes.commands[0],extensionContext);};
+  function openHoveredTable(table){const ext=tableExtension();if(!ext||!activePath)return;const source=view.state.doc.sliceString(table.from,table.to);if(new TextEncoder().encode(source).length>150000){toast('表格片段超过 150 KB，请先拆分表格','err');return;}openExtension(ext,ext.contributes.commands[0],{...extensionContext,tableTarget:{path:activePath,from:table.from,to:table.to,source}});}
+  root.querySelector('#table-edit-hint').onclick=()=>{const at=view.state.selection.main.head,table=findTables(view.state.doc.toString()).find(t=>at>=t.from&&at<t.to);if(table)openHoveredTable(table);};
   const extensionActions = { 'assistant.open': () => research.open(), 'discovery.search': openWorkspaceSearch,
     'publishing.slides': () => research.openDerive('slides'), 'publishing.poster': () => research.openDerive('poster'), 'publishing.chat':()=>research.openDerive('chat'),
     'publishing.template': () => research.openTemplate(),'publishing.templates':()=>openTemplateLibrary(), 'editing.vim':()=>setVim(!vimEnabled) };

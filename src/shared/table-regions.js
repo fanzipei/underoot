@@ -1,17 +1,12 @@
-import {findTables,mask} from '../plugins/table-model.js';
+import {findTables} from '../plugins/table-model.js';
 
-/** Include a float's caption/label only when it contains one unambiguous table. */
+/** Only the syntactically bounded tabular block is a table-editing region. */
 export function tableRegions(source){
- const tables=findTables(source).map(t=>({...t,hoverFrom:t.from,hoverTo:t.to})),text=mask(source),stack=[];
- for(const m of text.matchAll(/\\(begin|end)\{(table\*?)\}/g)){
-  if(m[1]==='begin'){stack.push({env:m[2],from:m.index});continue;}
-  const start=stack.pop();if(!start||start.env!==m[2])continue;const to=m.index+m[0].length,inside=tables.filter(t=>t.from>=start.from&&t.to<=to);
-  if(inside.length===1){inside[0].hoverFrom=start.from;inside[0].hoverTo=to;}
- }return tables;
+ return findTables(source).map(t=>({...t,hoverFrom:t.from,hoverTo:t.to}));
 }
 
 export function tableAtLine(regions,from,to,position=null){
- if(position!=null){const exact=regions.find(t=>position>=t.from&&position<t.to);if(exact)return exact;}
+ if(position!=null)return regions.find(t=>position>=t.from&&position<t.to)||null;
  const candidates=regions.filter(t=>from<t.hoverTo&&to>=t.hoverFrom);return candidates.length===1?candidates[0]:null;
 }
 

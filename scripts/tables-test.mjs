@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import AdmZip from 'adm-zip';
 import {inspectExtensionZip} from '../server/extension-packages.js';
-import {parseTable,replaceTable} from '../src/plugins/table-model.js';
+import {parseTable,replaceTable,findTables} from '../src/plugins/table-model.js';
 const BASE=process.env.BASE_URL;let n=0;const check=(name,value)=>{assert.ok(value,name);console.log('✓ '+name);n++;};
 async function req(url,cookie='',method='GET',body){const r=await fetch(BASE+url,{method,headers:{cookie,...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:r.status,data:await r.json().catch(()=>({})),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
 const owner=(await req('/api/auth/login','','POST',{email:'demo@latex.studio',password:'demo1234'})).cookie,admin=(await req('/api/auth/login','','POST',{email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_PASSWORD})).cookie;
@@ -22,7 +22,7 @@ Baseline & 0.80 & 10 \\
 Conclusion remains unchanged.
 \end{document}`;
 check('bundled table editor is registered with minimum document permissions',(await req('/api/extensions',owner)).data.extensions.some(e=>e.id==='underoot.tables'&&e.enabled&&e.permissions.length===3));
-const asset=await fetch(BASE+'/extensions/underoot.tables/1.1.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
+const asset=await fetch(BASE+'/extensions/underoot.tables/1.2.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
 check('table editor cannot invoke an undeclared model capability',(await rpc('ai.complete',{instruction:'no'})).status===403);
 await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:source});
 const doc=(await rpc('documents.read',{path:'main.tex'})).data.result,m=parseTable(doc.content);m.rows[1][1].tex='$0.93 \\pm 0.01$';const content=replaceTable(m);
@@ -34,10 +34,42 @@ const moved=await rpc('selection.read',{}, {context:{selection:{...target,from:t
 check('changed table selection is rejected with an actionable conflict',(await rpc('selection.read',{}, {context:{selection:{...target,expectedText:targetText.replace('Score','Changed!'),to:target.from+targetText.replace('Score','Changed!').length}}})).status===409);
 const saved=(await rpc('documents.write',{path:doc.path,content,hash:doc.hash},{consent:true})).data.result;check('confirmed table save returns a new document version',saved?.content===content&&saved.hash!==doc.hash);
 check('stale table save cannot overwrite a collaborator edit',(await rpc('documents.write',{path:doc.path,content:source,hash:doc.hash},{consent:true})).status===409);
+// Gutter invocation operates on a single quoted block, never a whole-document model.
+const other=String.raw`\begin{tabular}{lc}Beta & 0.94 \\ \end{tabular}`;
+let scopedSource=content+'\nSecond table:\n'+other+'\nEnd unchanged.',range=findTables(scopedSource)[1];
+await req(`/api/projects/${project.id}/file?path=scoped.tex`,owner,'PUT',{content:scopedSource});
+const scopedTarget={path:'scoped.tex',from:range.from,to:range.to,source:other};
+const readScoped=async(target=scopedTarget,cookie=owner)=>rpc('documents.table.read',{}, {context:{table:target}},cookie);
+let fragment=(await readScoped()).data.result;
+check('region read returns only the clicked second table',fragment?.content===other&&!fragment.content.includes('Intro')&&!fragment.content.includes('Ours'));
+check('region read requires an explicit table target',(await rpc('documents.table.read')).status===400);
+check('region read rejects surrounding prose',(await readScoped({...scopedTarget,source:'Prose '+other,to:scopedTarget.to+6})).status===400);
+check('region read rejects multiple tables',(await readScoped({...scopedTarget,source:other+other,to:scopedTarget.from+other.length*2})).status===400);
+const editArgs=()=>({...fragment,before:fragment.content,content:other.replace('0.94','0.95')});
+check('fragment save requires author confirmation',(await rpc('documents.table.write',editArgs())).status===400);
+check('fragment save rejects a forged hash',(await rpc('documents.table.write',{...editArgs(),hash:'wrong'},{consent:true})).status===400);
+const outside='New author text above\n'+scopedSource+'\nNew author text below';
+await req(`/api/projects/${project.id}/file?path=scoped.tex`,owner,'PUT',{content:outside});
+const localSaved=await rpc('documents.table.write',editArgs(),{consent:true});
+check('fragment save relocates a unique moved table',localSaved.status===200&&localSaved.data.result.from===outside.indexOf(other));
+check('fragment save preserves all concurrent edits outside the table',(await rpc('documents.read',{path:'scoped.tex'})).data.result.content===outside.replace(other,other.replace('0.94','0.95')));
+check('stale fragment cannot overwrite edits inside the table',(await rpc('documents.table.write',editArgs(),{consent:true})).status===409);
+const raw='CRLF prefix\r\n'+other.replace('Beta','Beta\r\n')+'\r\nCRLF suffix',normalized=raw.replaceAll('\r\n','\n'),nr=findTables(normalized)[0];
+await req(`/api/projects/${project.id}/file?path=crlf.tex`,owner,'PUT',{content:raw});
+const crlf=(await readScoped({path:'crlf.tex',from:nr.from,to:nr.to,source:nr.source})).data.result;
+check('normalized editor offsets resolve to the exact raw CRLF block',crlf?.content===raw.slice(crlf.from,crlf.to)&&crlf.content.includes('\r\n'));
+const crlfSave=await rpc('documents.table.write',{...crlf,before:crlf.content,content:crlf.content.replace('0.94','0.96')},{consent:true});
+check('CRLF local save preserves all surrounding bytes',crlfSave.status===200&&(await rpc('documents.read',{path:'crlf.tex'})).data.result.content===raw.replace('0.94','0.96'));
+const large='Long manuscript.\n'.repeat(12000)+other;
+await req(`/api/projects/${project.id}/file?path=large.tex`,owner,'PUT',{content:large});
+const largeFragment=await readScoped({path:'large.tex',from:large.indexOf(other),to:large.length,source:other});
+check('small table in a large manuscript does not load the full document into the plugin',largeFragment.status===200&&largeFragment.data.result.content===other&&JSON.stringify(largeFragment.data).length<1000);
 for(const variant of ['grid','plain','booktabs','grid-inline','booktabs-tabularx']){const style=variant.split('-')[0],input=variant==='grid-inline'?content.replaceAll('\n',' '):variant==='booktabs-tabularx'?content.replace('\\begin{tabular}{lcc}','\\begin{tabularx}{\\linewidth}[t]{lXX}').replace('\\end{tabular}','\\end{tabularx}'):content;const model=parseTable(input);model.structural=true;model.style=style;model.stretch=1.3;model.padding=8;const result=replaceTable(model),path='table-'+variant+'.tex';check(variant+' style saves to an isolated source file',(await rpc('documents.write',{path,content:result,hash:null},{consent:true})).status===200);const engines=(await req('/api/system/engines',owner)).data.engines;if(engines.some(e=>e.id==='xelatex')){const c=await req(`/api/projects/${project.id}/compile`,owner,'POST',{mainFile:path,engine:'xelatex',force:true});if(!c.data.ok)console.error(c.data.errors);check(variant+' style compiles to a real PDF',c.data.ok);}}
 const zipResponse=await fetch(BASE+'/api/extensions/examples/tables/download',{headers:{cookie:owner}}),bytes=Buffer.from(await zipResponse.arrayBuffer()),pack=inspectExtensionZip(bytes);check('portable ZIP passes the installation validator',pack.manifest.id==='research.tables'&&new AdmZip(bytes).getEntry('plugin.js'));
 const email=`table-viewer-${Date.now()}@test.local`;await req('/api/auth/register','','POST',{email,name:'Table viewer',password:'TableFixturePass42!'});const users=(await req('/api/admin/users',admin)).data.users,u=users.find(u=>u.email===email);await req('/api/admin/users/'+u.id+'/review',admin,'POST',{status:'active'});const viewer=(await req('/api/auth/login','','POST',{email,password:'TableFixturePass42!'})).cookie;await req(`/api/projects/${project.id}/members`,owner,'POST',{email,role:'viewer'});
 check('viewer can read a table but cannot save it',(await rpc('documents.read',{path:'main.tex'},{},viewer)).status===200&&(await rpc('documents.write',{path:'main.tex',content,hash:saved.hash},{consent:true},viewer)).status===403);
 check('nonmembers cannot read table source',(await rpc('documents.read',{path:'main.tex'},{},admin)).status===403);
+check('viewer can read the requested fragment but cannot write',(await readScoped({...scopedTarget,source:other.replace('0.94','0.95')},viewer)).status===200&&(await rpc('documents.table.write',editArgs(),{consent:true},viewer)).status===403);
+check('nonmembers cannot read a table fragment',(await readScoped(scopedTarget,admin)).status===403);
 await req('/api/extensions/underoot.tables',admin,'PATCH',{enabled:false});check('disabled plugin cannot read or save documents',(await rpc('documents.read',{path:'main.tex'})).status===404);
 console.log(`Table plugin integration: ${n}/${n} passed`);

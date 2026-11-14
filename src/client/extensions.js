@@ -46,7 +46,10 @@ export function openExtension(extension, command, context) {
     if (typeof id !== 'string' || id.length > 80 || pending >= 3) { reply(id, null, '同时最多处理 3 个插件请求'); return; }
     pending++;
     try {
+      if(context.tableTarget&&['project.read','selection.read','documents.list','documents.read','documents.write','documents.convert'].includes(method))throw Error('此窗口只允许当前表格片段读写；请使用支持区域编辑的表格插件');
+      if(context.tableTarget&&method==='documents.table.write'&&(args?.path!==context.tableTarget.path||args?.before!==context.tableTarget.source||args?.from!==context.tableTarget.from||args?.to!==context.tableTarget.to))throw Error('只能保存当前选中的表格区域');
       const body = { method, args, projectId: context.project?.id };
+      if(method==='documents.table.read'&&extension.permissions.includes('documents.read'))body.context={table:context.tableTarget||null};
       if (method === 'selection.read' && extension.permissions.includes('selection.read')) body.context = { selection: context.getSelection?.() || null };
       if (method === 'pdf.read' && extension.permissions.includes('pdf.read')) body.context = { pdf: await context.getPdfSelection?.() };
       if (method === 'ai.complete') {
@@ -54,9 +57,9 @@ export function openExtension(extension, command, context) {
         if (!await confirmDialog({ title: `插件「${extension.name}」请求调用模型`, message: '将把插件提供的选区或研究内容发送到管理员配置的模型服务，可能产生费用。插件无法获取 API Key。', confirmText: '发送并调用模型' })) throw new Error('作者取消了模型调用');
         body.consent = true;
       }
-      if (method === 'documents.write') {
+      if (method === 'documents.write'||method==='documents.table.write') {
         if (!extension.permissions.includes('documents.write')) throw new Error('插件未声明 documents.write 权限');
-        if (!await confirmDialog({ title: `插件「${extension.name}」请求保存文档`, message: `文件：${String(args?.path || '')}\n${args?.hash === null ? '创建新文件' : '替换已有文件（保留历史）'}\n\n${String(args?.content || '').slice(0, 3000)}`, confirmText: '确认保存' })) throw new Error('作者取消了文档保存');
+        if (!await confirmDialog({ title: `插件「${extension.name}」请求保存文档`, message: `文件：${String(args?.path || '')}\n${method==='documents.table.write'?'仅替换当前表格片段（保留表外正文与历史）':args?.hash === null ? '创建新文件' : '替换已有文件（保留历史）'}\n\n${String(args?.content || '').slice(0, 3000)}`, confirmText: '确认保存' })) throw new Error('作者取消了文档保存');
         body.consent = true;
       }
       if(method==='publishing.templates.register'){
@@ -64,6 +67,7 @@ export function openExtension(extension, command, context) {
        if(!await confirmDialog({title:`插件「${extension.name}」请求保存个人模板`,message:`${String(args?.template?.name||'').slice(0,100)} · ${String(args?.template?.kind||'')}\n强调色 ${String(args?.template?.accent||'')}，背景 ${String(args?.template?.background||'')}。仅保存经过校验的视觉参数，不执行插件提供的 LaTeX。`,confirmText:'确认保存模板'}))throw Error('用户取消了模板注册');body.consent=true;
       }
       const { result } = await api.post(`/api/extensions/${extension.id}/rpc`, body);
+      if(method==='documents.table.write'||method==='documents.table.read')context.tableTarget={path:result.path,from:result.from,to:result.to,source:result.content};
       if(method==='publishing.templates.extract'&&result.hostPicker){const template=await openTemplateLibrary({kind:args?.kind==='poster'?'poster':'slides'});reply(id,{template});return;}
       if (method === 'ui.notify') toast(`${extension.name}：${result.message}`, 'ok');
       reply(id, result);
@@ -72,6 +76,7 @@ export function openExtension(extension, command, context) {
   };
   window.addEventListener('message', listener);
   frame.onload = () => frame.contentWindow?.postMessage({ type: 'underoot:init', channel, context: { apiVersion: 1, command: command.id,
+    invocation:context.tableTarget&&extension.permissions.includes('documents.read')?{kind:'table'}:null,
     project: context.project ? { id: context.project.id, name: context.project.name, role: context.project.role } : null } }, '*');
   windowEl.querySelector('[data-close]').onclick = () => windowEl.remove();
   windowEl.querySelector('[data-proposals]')?.addEventListener('click', () => { windowEl.remove(); context.openProposals(); });
