@@ -1,3 +1,4 @@
+import {cleanCompileFiles} from './compile-clean.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -171,6 +172,11 @@ export function parseLog(log) {
       });
       continue;
     }
+    // BibTeX points into .bib files, not the TeX engine log.
+    m=line.match(/^(.*?)---line (\d+) of file (.+)$/);
+    if(m){pushUnique(errors,{file:m[3].trim(),line:Number(m[2]),message:'BibTeX: '+m[1].trim(),type:'error'});continue;}
+    if(/^ERROR - /i.test(line)){pushUnique(errors,{file:null,line:null,message:'Biber: '+line.replace(/^ERROR - /i,''),type:'error'});continue;}
+    if(/^Warning--/.test(line)){pushUnique(warnings,{file:null,line:null,message:'BibTeX: '+line.slice(9),type:'warning'});continue;}
     // ! message  （后面常有 l.NN）
     m = line.match(/^!\s*(.+)$/);
     if (m) {
@@ -234,7 +240,7 @@ export function hashProject(dir) {
   return hash.digest('hex');
 }
 
-export async function compileProject({ projectId, mainFile, engine: engineId = null, timeout = DEFAULT_TIMEOUT }) {
+export async function compileProject({ projectId, mainFile, engine: engineId = null, timeout = DEFAULT_TIMEOUT, force = false, clean = false }) {
   const dir = projectDir(projectId);
   const main = resolveInside(dir, mainFile);
   if (!fs.existsSync(main)) {
@@ -272,7 +278,7 @@ export async function compileProject({ projectId, mainFile, engine: engineId = n
 
   let args;
   if (engine.id === 'latexmk') {
-    args = [unicode ? '-xelatex' : '-pdf', '-interaction=nonstopmode', '-file-line-error', '-synctex=1', '-halt-on-error', '-no-shell-escape', relMain];
+    args = [unicode ? '-xelatex' : '-pdf', ...(force||clean?['-g']:[]), '-interaction=nonstopmode', '-file-line-error', '-synctex=1', '-halt-on-error', '-no-shell-escape', relMain];
   } else if (engine.id === 'tectonic') {
     args = ['--keep-logs', '--outdir', '.', '--chatter', 'minimal', relMain];
   } else {
@@ -280,7 +286,9 @@ export async function compileProject({ projectId, mainFile, engine: engineId = n
   }
 
   const passes = engine.id === 'latexmk' || engine.id === 'tectonic' ? 1 : 2;
-  let allOut = '';
+  let allOut = '[编译命令] '+engine.id+' '+args.join(' ')+'\n';
+  try {
+  if(clean){const removed=cleanCompileFiles(dir,base);allOut+='[清理后重新编译] 已移除 '+removed.length+' 个辅助文件：'+removed.join('、')+'\n';}
   let totalMs = 0;
   let lastCode = 0;
 
@@ -298,21 +306,17 @@ export async function compileProject({ projectId, mainFile, engine: engineId = n
     }
   }
 
-  release();
-  if (locks.get(key) === chained) locks.delete(key);
-
   const logPath = path.join(dir, `${base}.log`);
-  let logText = allOut;
-  if (fs.existsSync(logPath)) {
-    const fileLog = fs.readFileSync(logPath, 'utf8');
-    if (fileLog.trim().length > allOut.trim().length) logText = fileLog;
-  }
+  let logText = '[本次编译器输出]\n'+allOut;
+  if (fs.existsSync(logPath)) logText+='\n\n[TeX 日志；增量编译时可能来自上一轮]\n'+fs.readFileSync(logPath,'utf8');
+  const bibLog=path.join(dir,`${base}.blg`);
+  if(lastCode!==0&&fs.existsSync(bibLog))logText+='\n\n[参考文献编译日志]\n'+fs.readFileSync(bibLog,'utf8');
 
   const ok = fs.existsSync(pdfPath) && lastCode === 0;
   const parsed = parseLog(logText);
 
   if (!ok && parsed.errors.length === 0) {
-    parsed.errors.push({ file: relMain, line: null, message: allOut.trim().split(/\r?\n/).filter(Boolean).pop() || '编译失败', type: 'error' });
+    parsed.errors.push({ file: relMain, line: null, message: `${engineLabel(engine.id)} 未成功（退出码 ${lastCode}），请查看本次编译器输出；修正后可清理辅助文件重新编译`, type: 'error' });
   }
 
   return {
@@ -325,6 +329,7 @@ export async function compileProject({ projectId, mainFile, engine: engineId = n
     warnings: parsed.warnings,
     pdf: ok ? `${base}.pdf` : null,
   };
+  } catch(error){return{ok:false,engine:engine.id,ms:0,log:allOut+'\n'+error.message,errors:[{file:relMain,line:null,message:error.message,type:'error'}],warnings:[],pdf:null};} finally { release(); if(locks.get(key)===chained)locks.delete(key); }
 }
 
 export const systemRouter = express.Router();

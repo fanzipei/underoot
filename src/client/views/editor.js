@@ -242,6 +242,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
           </select>
         </label>
         <button class="btn btn-primary btn-sm" id="btn-compile" style="height:30px;padding:0 12px">${icon('play')}<span>编译</span></button>
+        <button class="btn btn-ghost btn-icon btn-sm" id="btn-clean-compile" title="清理辅助文件后从头重新编译" aria-label="清理后重新编译">${icon('refresh')}</button>
         <button class="btn btn-sm" id="btn-wasm-cancel" style="display:none">停止本地编译</button>
         <div id="user-chip" style="cursor:pointer">${avatarHtml(user, 'avatar-sm')}</div>
       </header>
@@ -367,6 +368,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
   /* ---------- CodeMirror ---------- */
   const collabComp = new Compartment();
+  const editComp = new Compartment();
   const langComp = new Compartment();
   const commentComp = new Compartment();
   const wrapComp=new Compartment(),wrapKey=`underoot.wrap.${user.id}`;let wrapEnabled=localStorage.getItem(wrapKey)!=='0';
@@ -382,8 +384,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         vimComp.of([]),
         wrapComp.of(wrapEnabled?EditorView.lineWrapping:[]),
         keymap.of([{key:"Alt-z",run:()=>{setWrap(!wrapEnabled);return true;}}]),
-        EditorState.readOnly.of(!canEdit),
-        EditorView.editable.of(canEdit),
+        editComp.of([EditorState.readOnly.of(!canEdit),EditorView.editable.of(canEdit)]),
         lineNumbers(),
         tableEditingGutter({enabled:()=>!!tableExtension()&&/\.tex$/i.test(activePath||''),onOpen:openHoveredTable}),
         highlightActiveLineGutter(),
@@ -688,7 +689,12 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }
 
   /* ---------- 打开 / 切换文件 ---------- */
+  let fileOpenRequest=0;
   async function openFile(path) {
+    const request=++fileOpenRequest;
+    // ySync is a singleton plugin: reconfiguring its facet alone retains the old
+    // document binding. Unmount it before changing any editor content.
+    view.dispatch({effects:[collabComp.reconfigure([]),editComp.reconfigure([EditorState.readOnly.of(true),EditorView.editable.of(false)])]});
     if (!tabs.includes(path)) tabs.push(path);
     activePath = path;
     if(sideTab==='history'&&historyMode==='file')renderSideHistory();
@@ -728,14 +734,17 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         entry.provider.on('sync', onSync);
         if (entry.provider.synced) onSync(true);
       });
-      if (activePath !== path || !els.host.isConnected) return;
+      if (request!==fileOpenRequest || activePath !== path || !els.host.isConnected) return;
       // y-codemirror 挂载时不会自动导入已有内容，这里先把编辑器内容对齐到 ytext 当前状态，
       // 之后远程同步的增量会由 observer 应用进来。
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: entry.ytext.toString() },
         selection: EditorSelection.cursor(0),
         scrollIntoView: true,
-        effects: [
+        annotations:ySyncAnnotation.of(true),
+      });
+      view.dispatch({effects: [
+          editComp.reconfigure([EditorState.readOnly.of(!canEdit),EditorView.editable.of(canEdit)]),
           langComp.reconfigure(StreamLanguage.define(stex)),
           collabComp.reconfigure(yCollab(entry.ytext, entry.provider.awareness, { undoManager: entry.undo })),
         ],
@@ -773,7 +782,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
       const next = tabs[Math.max(0, idx - 1)];
       if (next) openFile(next);
       else {
-        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '' } });
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '' },annotations:ySyncAnnotation.of(true) });
         els.host.innerHTML = `<div class="empty-state" style="margin:24px">从左侧选择一个文件开始编辑</div>`;
         activePath = null;
       }
@@ -807,6 +816,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     cancel.onclick=()=>{compileQueued=false;browserTeX.destroy();};
     els.engineSelect.disabled = !canEdit || busy || changingEngine;
     els.compileBtn.disabled = busy;
+    root.querySelector('#btn-clean-compile').disabled=busy||!canEdit;
     els.compileBtn.innerHTML = busy
       ? '<span class="spinner"></span><span>编译中</span>'
       : `${icon('play')}<span>${label}</span>`;
@@ -901,19 +911,20 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     ws.onerror = () => {};
   }
 
-  async function compile(manual = false) {
+  async function compile(manual = false, clean = false) {
     if (!canEdit && !isBrowserEngine(project.engine)) {
       const output = baseName(project.mainFile).replace(/\.[^.]+$/, '') + '.pdf';
       if (findFile(tree, output)) showPdf(`/api/projects/${projectId}/pdf?file=${encodeURIComponent(output)}`);
       return;
     }
-    if (compiling) { compileQueued = true; return; }
+    if (compiling) { if(clean){toast('请等待当前编译结束后再清理重编');return;}compileQueued = true; return; }
     compiling = true;
     setCompileBusy(true);
     if (manual && pdfVisible) showPdfLoading();
     try {
       let res;
       if (isBrowserEngine(project.engine)) {
+        if(clean)browserTeX.destroy();
         const payload = await api.get(`/api/workspace/projects/${projectId}/browser-files`);
         if (activePath && docs.has(activePath)) {
           const file = payload.files.find((f) => f.path === activePath);
@@ -924,6 +935,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
       } else res = await api.post(`/api/projects/${projectId}/compile`, {
         mainFile: project.mainFile,
         force: !!manual,
+        clean: !!clean,
       });
       applyCompileResult(res, { local: true, manual });
     } catch (err) {
@@ -1172,6 +1184,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   };
 
   els.compileBtn.onclick = () => compile(true);
+  root.querySelector('#btn-clean-compile').onclick=()=>compile(true,true);
   root.querySelector('#btn-fix-clash').onclick = async () => {
     const btn = root.querySelector('#btn-fix-clash');
     btn.disabled = true;
@@ -1459,7 +1472,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   if (initialLocation.comment) comments.focusThread(initialLocation.comment);
   if (!canEdit) {
     root.querySelector('#proj-name').readOnly = true;
-    for (const id of ['btn-new-file', 'btn-upload', 'btn-fix-clash']) root.querySelector('#' + id).disabled = true;
+    for (const id of ['btn-new-file', 'btn-upload', 'btn-fix-clash','btn-clean-compile']) root.querySelector('#' + id).disabled = true;
   }
 
   const savedSide=sessionStorage.getItem('underoot.side.'+projectId);if(['history','extensions'].includes(savedSide))showSide(savedSide);

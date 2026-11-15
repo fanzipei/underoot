@@ -568,7 +568,8 @@ function resultToJson(result, projectId) {
 
 projectsRouter.post('/:id/compile', loadProject, async (req, res) => {
   const mainFile = req.body?.mainFile ? normalizeRelPath(req.body.mainFile) : req.project.main_file;
-  const force = req.body?.force === true;
+  const clean = req.body?.clean === true;
+  const force = req.body?.force === true || clean;
   // 项目级引擎优先，其次本次请求（前端临时切换），最后 auto 跟随服务端默认
   const requestedEngine = req.body?.engine || req.project.engine || 'auto';
   if (['wasm-pdftex','wasm-xetex'].includes(requestedEngine)) return res.status(400).json({ error: 'WASM 引擎在浏览器中运行，请在编辑器点击编译，或改用服务器引擎' });
@@ -577,6 +578,7 @@ projectsRouter.post('/:id/compile', loadProject, async (req, res) => {
   const dir = projectDir(req.project.id);
   flushProject(req.project.id);
   const hash = hashProject(dir);
+  if(clean)compileCache.delete(req.project.id);
   const hit = compileCache.get(req.project.id);
   // 缓存必须绑定引擎：换 pdfLaTeX / Tectonic 不能复用上一引擎的 PDF
   const stillFresh = hit && hit.epoch === req.project.collab_epoch && hit.hash === hash && hit.mainFile === mainFile && hit.engine === engineKey && Date.now() - hit.at < 10 * 60 * 1000;
@@ -586,7 +588,7 @@ projectsRouter.post('/:id/compile', loadProject, async (req, res) => {
     result = { ...hit.result, cached: true };
   } else {
     broadcastProject(req.project.id, { type: 'compile:start', by: req.user.name, at: Date.now() });
-    const raw = await compileProject({ projectId: req.project.id, mainFile, engine: requestedEngine });
+    const raw = await compileProject({ projectId: req.project.id, mainFile, engine: requestedEngine, force, clean });
     result = resultToJson(raw, req.project.id);
     result.by = req.user.name;
     result.engineLabel = raw.engine ? engineLabel(raw.engine) : null;
