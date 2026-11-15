@@ -22,7 +22,7 @@ Baseline & 0.80 & 10 \\
 Conclusion remains unchanged.
 \end{document}`;
 check('bundled table editor is registered with minimum document permissions',(await req('/api/extensions',owner)).data.extensions.some(e=>e.id==='underoot.tables'&&e.enabled&&e.permissions.length===3));
-const asset=await fetch(BASE+'/extensions/underoot.tables/1.3.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
+const asset=await fetch(BASE+'/extensions/underoot.tables/1.4.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
 check('table editor cannot invoke an undeclared model capability',(await rpc('ai.complete',{instruction:'no'})).status===403);
 await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:source});
 const doc=(await rpc('documents.read',{path:'main.tex'})).data.result,m=parseTable(doc.content);m.rows[1][1].tex='$0.93 \\pm 0.01$';const content=replaceTable(m);

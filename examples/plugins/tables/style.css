@@ -5,3 +5,6 @@
 .original-layout.booktabs tr:first-child td{border-bottom:none}.original-layout td{min-width:65px}.nested-preview{width:auto;font-size:inherit}.nested-preview td{min-width:0;padding:3px 7px;cursor:inherit}td[rowspan]{vertical-align:middle}
 .original-layout.grid td{border:none}
 .original-layout td{min-width:105px;overflow-wrap:normal}.original-layout td:first-child{min-width:155px}
+
+.canvas{min-width:0;overflow:hidden;padding:14px}.view-controls{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:12px}.view-controls button{padding:5px 9px}.view-controls output{min-width:43px;text-align:center;font-variant-numeric:tabular-nums}.view-controls [aria-pressed=true]{background:#e5f3ed;border-color:#4c9d86;color:#14654e}.view-controls small{flex-basis:100%}#table-viewport{position:relative;overflow:auto;max-height:58vh;min-height:90px;scrollbar-gutter:stable;overscroll-behavior:contain;border:1px solid #dce5e8;border-radius:5px;background:white}#table-viewport:focus-visible{outline:2px solid #228e80;outline-offset:2px}#table-stage{position:relative;min-height:50px}#grid{position:absolute;top:0;left:0;width:max-content;transform-origin:0 0}#grid>table{width:auto}#packages{margin-bottom:0}
+#table-stage{overflow:hidden}
