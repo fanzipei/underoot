@@ -1,6 +1,6 @@
+import {orderFiles} from '../../shared/file-order.js';
 import {tableEditingGutter} from '../table-gutter.js';
 import {openAgentAccess} from '../agent-access.js';
-import {findTables} from '../../plugins/table-model.js';
 import { EditorView, keymap, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor } from '@codemirror/view';
 import { EditorState, Compartment, EditorSelection } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -23,7 +23,7 @@ import { loadExtensions, enabledExtension, extensionCommands, openExtension, ope
 
 import { api } from '../api.js';
 import {
-  icon, escapeHtml, avatarHtml, toast, modal, confirmDialog, promptDialog, dropdown, timeAgo,
+  icon, escapeHtml, avatarHtml, toast, modal, sidebarSurface, confirmDialog, promptDialog, dropdown, timeAgo,
 } from '../ui.js';
 
 const IMAGE_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp'];
@@ -179,6 +179,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
   let project;
   let tree = [];
+  let fileSort=localStorage.getItem('underoot.files.sort.'+user.id)||'name';
   let initialIssues = [];
   let engines = [];
   try {
@@ -246,22 +247,25 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
       </header>
 
       <div class="ed-main">
-        <aside class="side">
-          <div class="side-head">
-            <span>文件</span>
-            <div class="side-actions">
-              <button id="btn-new-file" title="新建文件">${icon('plus')}</button>
-              <button id="btn-history" title="历史版本">${icon('clock')}</button>
-              <button id="btn-extensions" title="插件中心">${icon('grid')}</button>
-              <button id="btn-more" title="更多">${icon('more')}</button>
+        <aside class="side" data-panel="files">
+          <div class="side-head"><div class="side-actions" role="tablist" aria-label="左侧工作区">
+            <button id="btn-files" role="tab" aria-selected="true" aria-controls="side-files" title="文件管理" aria-label="文件管理">${icon('file')}</button>
+            <button id="btn-history" role="tab" aria-selected="false" aria-controls="side-history" title="历史版本与分支" aria-label="历史版本与分支" tabindex="-1">${icon('clock')}</button>
+            <button id="btn-extensions" role="tab" aria-selected="false" aria-controls="side-extensions" title="插件中心" aria-label="插件中心" tabindex="-1">${icon('grid')}</button>
+          </div><button id="btn-more" class="side-more" title="更多" aria-label="更多">${icon('more')}</button></div>
+          <section id="side-files" class="side-page" role="tabpanel" aria-labelledby="btn-files">
+            <div class="tree" id="tree"></div>
+            <div class="side-foot" aria-label="文件操作">
+              <button class="btn btn-sm" id="btn-new-file" title="新建文件或文件夹" aria-label="新建文件或文件夹" aria-haspopup="true">${icon('plus')}</button>
+              <button class="btn btn-sm" id="btn-upload" title="上传文件或文件夹" aria-label="上传文件或文件夹" aria-haspopup="true">${icon('upload')}</button>
+              <button class="btn btn-sm" id="btn-file-sort" title="文件排序" aria-label="文件排序" aria-haspopup="true">${icon('sort')}</button>
+              <button class="btn btn-sm" id="btn-download" title="下载项目 ZIP" aria-label="下载项目 ZIP">${icon('download')}</button>
             </div>
-          </div>
-          <div class="tree" id="tree"></div>
-          <div class="side-foot">
-            <button class="btn btn-sm" id="btn-upload" title="上传文件">${icon('upload')}上传</button>
-            <button class="btn btn-sm" id="btn-download" title="下载项目 ZIP">${icon('download')}</button>
-            <button class="btn btn-sm" id="btn-project-history" title="项目完整版本与分支">分支</button>
-          </div>
+          </section>
+          <section id="side-history" class="side-page" role="tabpanel" aria-labelledby="btn-history" hidden>
+            <div class="history-modes" role="group" aria-label="历史范围"><button class="btn btn-sm" id="history-project" aria-pressed="true">项目与分支</button><button class="btn btn-sm" id="history-file" aria-pressed="false">当前文件历史</button></div><div class="side-tool-host" id="side-history-host"></div>
+          </section>
+          <section id="side-extensions" class="side-page" role="tabpanel" aria-labelledby="btn-extensions" hidden><div class="side-tool-host" id="side-extension-host"></div></section>
         </aside>
 
         <div class="pane-editor">
@@ -272,7 +276,6 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
             <span id="st-pos">行 1, 列 1</span>
             <span id="st-sel"></span>
             <span id="st-engine"></span>
-            <button id="table-edit-hint" class="btn btn-ghost btn-sm" style="display:none" title="当前光标位于 TeX 表格，可打开可视化编辑器">用表格编辑器</button>
             <button id="wrap-toggle" class="btn btn-ghost btn-sm" title="自动换行（Alt+Z）" aria-pressed="true">自动换行：开</button>
             <button id="vim-toggle" class="vim-toggle" title="Vim 编辑模式：normal / insert / visual；:w 编译保存" hidden>VIM OFF</button>
             <span style="margin-left:auto" id="st-collab">协同已连接</span>
@@ -423,9 +426,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
   root.querySelector('#wrap-toggle').onclick=()=>setWrap(!wrapEnabled);setWrap(wrapEnabled);
 
-  let tableHintTimer;
   function updateStatus() {
-    clearTimeout(tableHintTimer);tableHintTimer=setTimeout(()=>{const hint=root.querySelector('#table-edit-hint');hint.style.display=!!tableExtension()&&/\.tex$/i.test(activePath||'')&&findTables(view.state.doc.toString()).some(t=>view.state.selection.main.head>=t.from&&view.state.selection.main.head<=t.to)?'':'none';},150);
     const sel = view.state.selection.main;
     const line = view.state.doc.lineAt(sel.head);
     els.stPos.textContent = `行 ${line.number}, 列 ${sel.head - line.from + 1}`;
@@ -446,15 +447,29 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   research = createResearchTools({ root, project, user, view, pdfViewer, assistantEnabled, getActivePath: () => activePath,
     openFile, compile, onOpen: () => comments?.closePanel() });
   root.querySelector('#btn-assistant').onclick = () => research.open();
-  root.querySelector('#btn-project-history').onclick = () => research.openHistory();
-  root.querySelector('#btn-extensions').onclick = () => openExtensionsManager(user);
+  let sideTab='files',historyMode='project';
+  function showSide(name){
+    sideTab=name;sessionStorage.setItem('underoot.side.'+projectId,name);root.querySelector('.side').dataset.panel=name;
+    for(const key of ['files','history','extensions']){const active=key===name,button=root.querySelector('#btn-'+key);button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;root.querySelector('#side-'+key).hidden=!active;}
+    if(name==='history')renderSideHistory();
+    if(name==='extensions'){const slot=document.createElement('div');root.querySelector('#side-extension-host').replaceChildren(slot);openExtensionsManager(user,slot);}
+  }
+  function renderSideHistory(){
+    const slot=document.createElement('div');root.querySelector('#side-history-host').replaceChildren(slot);
+    root.querySelector('#history-project').setAttribute('aria-pressed',String(historyMode==='project'));root.querySelector('#history-file').setAttribute('aria-pressed',String(historyMode==='file'));
+    slot.innerHTML='<p class="src-note">正在读取历史…</p>';
+    if(historyMode==='project')research.openHistory(slot);else openHistory(slot);
+  }
+  for(const name of ['files','history','extensions'])root.querySelector('#btn-'+name).onclick=()=>showSide(name);
+  root.querySelector('#history-project').onclick=()=>{historyMode='project';renderSideHistory();};
+  root.querySelector('#history-file').onclick=()=>{historyMode='file';renderSideHistory();};
+  root.querySelector('[role="tablist"]').onkeydown=event=>{const names=['files','history','extensions'],at=names.indexOf(sideTab);let index;if(event.key==='ArrowRight')index=(at+1)%3;else if(event.key==='ArrowLeft')index=(at+2)%3;else if(event.key==='Home')index=0;else if(event.key==='End')index=2;else return;event.preventDefault();showSide(names[index]);root.querySelector('#btn-'+names[index]).focus();};
   const extensionContext = { project, openProposals: () => research.open(),
     getSelection: () => { const selection = view.state.selection.main; return /\.(tex|bib)$/i.test(activePath || '') ? { path: activePath, from: selection.from, to: selection.to } : null; },
     getPdfSelection: () => research.getPdfSelection(),
   };
   function tableExtension(){return extensionList.find(x=>x.id==='underoot.tables'&&x.enabled)||extensionList.find(x=>x.id==='research.tables'&&x.enabled);}
   function openHoveredTable(table){const ext=tableExtension();if(!ext||!activePath)return;const source=view.state.doc.sliceString(table.from,table.to);if(new TextEncoder().encode(source).length>150000){toast('表格片段超过 150 KB，请先拆分表格','err');return;}openExtension(ext,ext.contributes.commands[0],{...extensionContext,tableTarget:{path:activePath,from:table.from,to:table.to,source}});}
-  root.querySelector('#table-edit-hint').onclick=()=>{const at=view.state.selection.main.head,table=findTables(view.state.doc.toString()).find(t=>at>=t.from&&at<t.to);if(table)openHoveredTable(table);};
   const extensionActions = { 'assistant.open': () => research.open(), 'discovery.search': openWorkspaceSearch,
     'publishing.slides': () => research.openDerive('slides'), 'publishing.poster': () => research.openDerive('poster'), 'publishing.chat':()=>research.openDerive('chat'),
     'publishing.template': () => research.openTemplate(),'publishing.templates':()=>openTemplateLibrary(), 'editing.vim':()=>setVim(!vimEnabled) };
@@ -479,7 +494,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }
 
   function renderTree() {
-    const walk = (nodes, depth) => nodes.map((node) => {
+    const walk = (nodes, depth) => orderFiles(nodes,fileSort).map((node) => {
       if (node.type === 'dir') {
         const open = expanded.has(node.path);
         return `
@@ -676,6 +691,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   async function openFile(path) {
     if (!tabs.includes(path)) tabs.push(path);
     activePath = path;
+    if(sideTab==='history'&&historyMode==='file')renderSideHistory();
     renderTabs();
     renderTree();
     comments?.onActivePathChange();
@@ -1070,7 +1086,6 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   });
   nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameInput.blur(); });
 
-  root.querySelector('#btn-history').onclick = openHistory;
   root.querySelector('#btn-new-file').onclick = async (e) => {
     dropdown(e.currentTarget, [
       { key: 'file', label: '新建文件', icon: 'file', onClick: async () => {
@@ -1081,13 +1096,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         const name = await promptDialog({ title: '新建文件夹', label: '文件夹名', placeholder: 'figures' });
         if (name) await createPath(name, 'dir');
       } },
-      { sep: true },
-      { key: 'up', label: '上传文件', icon: 'upload', onClick: () => root.querySelector('#up-input').click() },
-      { key: 'updir', label: '上传文件夹', icon: 'folder-open', onClick: () => root.querySelector('#up-folder').click() },
-      { key: 'zip', label: '下载项目 ZIP', icon: 'download', onClick: () => {
-        window.location.href = `/api/projects/${projectId}/download`;
-      } },
-    ], { align: 'left' });
+    ], { align: 'left', direction:'up' });
   };
 
   async function setEngine(id) {
@@ -1129,10 +1138,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         ]
       : [];
     dropdown(anchor, [
-      ...extensionCommands(extensionList, extensionActions, extensionContext),
-      { key: 'extensions', label: '插件中心 · 安装与管理', icon: 'grid', onClick: () => openExtensionsManager(user) },
+      ...extensionCommands(extensionList.filter(x=>!['underoot.vim','underoot.tables','research.tables'].includes(x.id)), extensionActions, extensionContext),
       ...(canEdit?[{key:'agent-access',label:'连接研究 Agent · API',icon:'key',onClick:()=>openAgentAccess(project)}]:[]),
-      { key: 'project-history', label: '项目版本与分支', icon: 'clock', onClick: () => research.openHistory() },
       { key: 'notifications', label: '与我有关的讨论', icon: 'message', onClick: openNotifications },
       { sep: true },
       { key: 'compile', label: '重新编译', icon: 'play', onClick: () => compile(true) },
@@ -1150,7 +1157,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     ], { align: 'left' });
   };
 
-  root.querySelector('#btn-upload').onclick = () => root.querySelector('#up-input').click();
+  root.querySelector('#btn-upload').onclick = event => dropdown(event.currentTarget,[{key:'files',label:'上传文件',icon:'upload',onClick:()=>root.querySelector('#up-input').click()},{key:'folder',label:'上传文件夹',icon:'folder-open',onClick:()=>root.querySelector('#up-folder').click()}],{align:'left',direction:'up'});
+  root.querySelector('#btn-file-sort').onclick = event => dropdown(event.currentTarget,[['name','文件名（A → Z）'],['name-desc','文件名（Z → A）'],['type','文件类型'],['modified','修改日期（最新优先）'],['oldest','修改日期（最早优先）']].map(([key,label])=>({key,label:(fileSort===key?'✓ ':'')+label,onClick:async()=>{fileSort=key;localStorage.setItem('underoot.files.sort.'+user.id,key);try{await refreshTree();}catch(error){toast(error.message,'err');}}})),{align:'left',direction:'up'});
   root.querySelector('#btn-download').onclick = () => {
     window.location.href = `/api/projects/${projectId}/download`;
   };
@@ -1220,7 +1228,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   root.querySelector('#user-chip').onclick = (e) => {
     dropdown(e.currentTarget, [
       { meta: { title: user.name, sub: user.email } },
-      { key: 'extensions', label: '插件中心', icon: 'grid', onClick: () => openExtensionsManager(user) },
+      { key: 'extensions', label: '插件中心', icon: 'grid', onClick: () => showSide('extensions') },
       { key: 'ai-config', label: 'AI API 配置', icon: 'settings', onClick: () => openAiSettings(user) },
       { key: 'notifications', label: '讨论通知', icon: 'message', onClick: openNotifications },
       { key: 'logout', label: '退出登录', icon: 'logout', danger: true, onClick: async () => {
@@ -1319,16 +1327,18 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }
 
   /* ---------- 版本历史 ---------- */
-  async function openHistory() {
-    if (!activePath) { toast('请先打开一个文件', 'err'); return; }
+  async function openHistory(mount = null) {
+    const historyPath=activePath;
+    if (!historyPath) { toast('请先打开一个文件', 'err'); return; }
     let versions = [];
     try {
-      versions = (await api.get(`/api/projects/${projectId}/versions?path=${encodeURIComponent(activePath)}`)).versions;
+      versions = (await api.get(`/api/projects/${projectId}/versions?path=${encodeURIComponent(historyPath)}`)).versions;
     } catch (err) { toast(err.message, 'err'); return; }
 
-    const { root: m, close } = modal({
+    if(mount&&!mount.isConnected)return;
+    const { root: m, close } = (mount?options=>sidebarSurface(mount,options):modal)({
       title: '历史版本',
-      subtitle: `${activePath} · 自动保存快照，每个文件最多保留 40 个`,
+      subtitle: `${historyPath} · 自动保存快照，每个文件最多保留 40 个`,
       wide: true,
       bodyHtml: `
         <div class="history-wrap">
@@ -1361,7 +1371,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         preview.value = v.content;
         meta.textContent = `${new Date(v.createdAt).toLocaleString('zh-CN')} · ${v.content.length} 字符`;
         selected = vid;
-        restoreBtn.disabled = false;
+        restoreBtn.disabled = !canEdit;
         m.querySelectorAll('.history-item').forEach((b) => b.classList.toggle('active', b === btn));
       } catch (err) { toast(err.message, 'err'); }
     }
@@ -1373,15 +1383,16 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     if (firstItem) selectVersion(firstItem.dataset.vid, firstItem);
 
     m.querySelector('[data-act="cancel"]').onclick = close;
+    m.querySelector('#hist-save').disabled=!canEdit;
     m.querySelector('#hist-save').onclick = async () => {
       try {
-        const entry = docs.get(activePath);
+        const entry = docs.get(historyPath);
         const content = entry
           ? entry.ytext.toString()
-          : (await api.get(`/api/projects/${projectId}/file?path=${encodeURIComponent(activePath)}`)).content;
-        await api.post(`/api/projects/${projectId}/versions`, { path: activePath, content });
+          : (await api.get(`/api/projects/${projectId}/file?path=${encodeURIComponent(historyPath)}`)).content;
+        await api.post(`/api/projects/${projectId}/versions`, { path: historyPath, content });
         close();
-        toast('已保存当前版本', 'ok');
+        toast('已保存当前版本', 'ok');if(mount)openHistory(mount);
       } catch (err) { toast(err.message, 'err'); }
     };
     restoreBtn.onclick = async () => {
@@ -1390,8 +1401,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         await api.post(`/api/projects/${projectId}/versions/${selected}/restore`, {});
         close();
         await refreshTree();
-        await openFile(activePath);
-        toast('版本已恢复', 'ok');
+        await openFile(historyPath);
+        toast('版本已恢复', 'ok');if(mount)openHistory(mount);
         scheduleCompile();
       } catch (err) { toast(err.message, 'err'); }
     };
@@ -1451,6 +1462,8 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     for (const id of ['btn-new-file', 'btn-upload', 'btn-fix-clash']) root.querySelector('#' + id).disabled = true;
   }
 
+  const savedSide=sessionStorage.getItem('underoot.side.'+projectId);if(['history','extensions'].includes(savedSide))showSide(savedSide);
+
   // 初次编译
   setTimeout(() => {
     if (pdfVisible) compile(false);
@@ -1472,7 +1485,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
       try { entry.doc.destroy(); } catch { /* ignore */ }
     }
     docs.clear();
-    clearTimeout(tableHintTimer);view.destroy();
+    view.destroy();
   };
 }
 

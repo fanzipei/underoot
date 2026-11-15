@@ -1,6 +1,7 @@
 /* 图标：统一 16px 线性图标 */
 const P = {
   plus: '<path d="M8 3.5v9M3.5 8h9"/>',
+  sort: '<path d="M3 3v10m-2-2 2 2 2-2M7 4h7M7 8h5M7 12h3"/>',
   folder: '<path d="M2 4.5h4l1.2 1.5H14v6.2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5Z"/>',
   'folder-open': '<path d="M2 4.5h4l1.2 1.5H14v1H4.6L2 13V4.5Z"/><path d="M2 13l2.6-6H15l-2.6 6H2Z"/>',
   file: '<path d="M4 1.8h5l3 3V14H4V1.8Z"/><path d="M9 1.8V5h3"/>',
@@ -89,6 +90,13 @@ export function toast(message, type = '') {
 }
 
 /** 通用模态框，返回 {close} */
+/** Render an existing tool directly into an editor sidebar, without a backdrop. */
+export function sidebarSurface(mount, { title, subtitle = '', bodyHtml, footerHtml = '' }) {
+  const root = document.createElement('section'); root.className = 'sidebar-tool';
+  root.innerHTML = `<div class="sidebar-tool-head"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(subtitle)}</p></div><div class="sidebar-tool-body">${bodyHtml}</div><div class="sidebar-tool-foot">${footerHtml}</div>`;
+  mount.replaceChildren(root); return { root, close: () => root.remove() };
+}
+
 export function modal({ title, subtitle = '', bodyHtml, footerHtml, wide = false, onMount }) {
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
@@ -159,7 +167,7 @@ document.addEventListener('mousedown', (e) => {
   if (openMenu && !openMenu.contains(e.target)) closeMenu();
 });
 
-export function dropdown(anchor, items, { align = 'right' } = {}) {
+export function dropdown(anchor, items, { align = 'right', direction = 'auto' } = {}) {
   closeMenu();
   const menu = document.createElement('div');
   menu.className = 'dropdown';
@@ -175,7 +183,7 @@ export function dropdown(anchor, items, { align = 'right' } = {}) {
   let left = align === 'right' ? rect.right - width : rect.left;
   left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
   let top = rect.bottom + 6;
-  if (top + menu.offsetHeight > window.innerHeight - 8) top = Math.max(8, rect.top - menu.offsetHeight - 6);
+  if (direction === 'up' || top + menu.offsetHeight > window.innerHeight - 8) top = Math.max(8, rect.top - menu.offsetHeight - 6);
   menu.style.left = `${left}px`;
   menu.style.top = `${top}px`;
   menu.addEventListener('click', (e) => {

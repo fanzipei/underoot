@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { modal, toast, escapeHtml as e, confirmDialog } from './ui.js';
+import { modal, sidebarSurface, toast, escapeHtml as e, confirmDialog } from './ui.js';
 import { activate as assistant } from '../../extensions/builtin/underoot.assistant/activate.mjs';
 import { activate as discovery } from '../../extensions/builtin/underoot.discovery/activate.mjs';
 import { activate as publishing } from '../../extensions/builtin/underoot.publishing/activate.mjs';
@@ -95,11 +95,12 @@ export function openExtension(extension, command, context) {
   };
 }
 
-export async function openExtensionsManager(user) {
+export async function openExtensionsManager(user, mount = null) {
   try {
     const data = await api.get('/api/extensions');
+    if(mount&&!mount.isConnected)return;
     const admin = user.role === 'admin'; let inspected = null; let picked = null; let changed = false;
-    const { root: m, close } = modal({ title: 'underoot 插件中心', subtitle: '本地安装、按权限扩展、共享研究工具 · Extension API v1', wide: true,
+    const { root: m, close } = (mount?options=>sidebarSurface(mount,options):modal)({ title: 'underoot 插件中心', subtitle: '本地安装、按权限扩展、共享研究工具 · Extension API v1', wide: true,
       bodyHtml: `${admin ? `<div class="extension-install"><label for="extension-zip">安装插件 ZIP（≤10 MB）</label><input class="input" type="file" id="extension-zip" accept=".zip" /><button class="btn" id="extension-inspect">检查清单和权限</button><div id="extension-preview"></div></div>` : '<p class="src-note">所有成员可使用已启用的插件；只有管理员可安装、启停和卸载。</p>'}
         <p class="src-note">核心保留项目、协作、讨论、版本和凭据。下面的内置功能已作为可独立停用的插件提供；第三方 ZIP 使用隔离窗口和受控宿主 API。</p>
         <div id="extension-list">${data.extensions.map((extension) => `<article class="extension-card"><div><b>${e(extension.name)}</b> <span class="badge">${extension.builtin ? '内置插件' : 'ZIP 插件'}</span><span class="badge">${extension.enabled ? '已启用' : '已停用'}</span></div><div class="src-note">${e(extension.id)} · ${e(extension.version)} · ${e(extension.author)}</div><p>${e(extension.description)}</p><details><summary>权限声明（${extension.permissions.length}）</summary>${extension.permissions.map((p) => `<div>${e(data.permissions[p] || p)}</div>`).join('')}</details><div class="assistant-buttons">${admin ? `<button class="btn btn-sm" data-toggle-extension="${extension.id}" data-enabled="${extension.enabled}">${extension.enabled ? '停用' : '启用'}</button>` : ''}${!extension.builtin && extension.enabled ? `<a class="btn btn-sm" href="/api/extensions/${extension.id}/download">下载 ZIP 分享</a>` : ''}${admin && !extension.builtin ? `<button class="btn btn-sm" data-remove-extension="${extension.id}">卸载</button>` : ''}</div></article>`).join('')}</div>
@@ -107,7 +108,7 @@ export async function openExtensionsManager(user) {
       footerHtml: '<button class="btn btn-primary" id="extension-done">完成</button>',
     });
     m.querySelector('#extension-done').onclick = () => { close(); if (changed) location.reload(); };
-    const reload = async () => { close(); await openExtensionsManager(user); };
+    const reload = async () => { close(); await openExtensionsManager(user,mount); };
     m.querySelectorAll('[data-toggle-extension]').forEach((button) => { button.onclick = async () => {
       try { await api.patch(`/api/extensions/${button.dataset.toggleExtension}`, { enabled: button.dataset.enabled !== 'true' }); changed = true; close(); location.reload(); }
       catch (error) { toast(error.message, 'err'); }

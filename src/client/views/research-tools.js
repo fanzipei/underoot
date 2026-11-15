@@ -2,7 +2,7 @@ import { EditorView } from '@codemirror/view';
 import { api } from '../api.js';
 import { openPublishing } from '../publishing.js';
 import { createInlineReview } from '../inline-review.js';
-import { modal, toast, escapeHtml as e, confirmDialog, promptDialog, timeAgo } from '../ui.js';
+import { modal, sidebarSurface, toast, escapeHtml as e, confirmDialog, promptDialog, timeAgo } from '../ui.js';
 
 export function navigateProject(id, options = {}) {
   const params = new URLSearchParams(options);
@@ -256,9 +256,10 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
       if (result.applied) compile(false);
     } catch (error) { toast(error.message, 'err'); }
   }
-  async function openHistory() {
+  async function openHistory(mount = null) {
     try {
       const data = await api.get(`${base}/history`);
+      if(mount&&!mount.isConnected)return;
       const branches = new Map(data.branches.map((b) => [b.id, b]));
       const rows = data.revisions;
       const positions = new Map(rows.map((r, i) => [r.id, { x: 12 + data.branches.findIndex((b) => b.id === r.branch_id) * 18, y: i * 66 + 25 }]));
@@ -267,7 +268,7 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
         return `<path d="M${a.x},${a.y} C${a.x},${(a.y+b.y)/2} ${b.x},${(a.y+b.y)/2} ${b.x},${b.y}" fill="none" stroke="#9ab5c6" stroke-width="2" />`;
       }).join('');
       const dots = rows.map((r) => { const point = positions.get(r.id); return `<circle cx="${point.x}" cy="${point.y}" r="5" fill="${r.branch_id === data.activeBranch ? '#16794a' : '#5874bc'}"><title>${e(r.title)}</title></circle>`; }).join('');
-      const { root: m, close: closeModal } = modal({ title: '项目版本与分支', subtitle: '完整项目快照 · 旧稿、素材与编译器设置一起保留', wide: true,
+      const { root: m, close: closeModal } = (mount?options=>sidebarSurface(mount,options):modal)({ title: '项目版本与分支', subtitle: '完整项目快照 · 旧稿、素材与编译器设置一起保留', wide: true,
         bodyHtml: `<div class="revision-toolbar"><select class="input" id="revision-branch" ${editable ? '' : 'disabled'}>${data.branches.map((b) => `<option value="${b.id}" ${b.id === data.activeBranch ? 'selected' : ''}>${e(b.name)}</option>`).join('')}</select><button class="btn" id="revision-save" ${editable ? '' : 'disabled'}>保存检查点</button><button class="btn" id="revision-create" ${editable ? '' : 'disabled'}>从所选版本建分支</button><button class="btn" id="revision-merge" ${editable && data.branches.length > 1 ? '' : 'disabled'}>合并分支</button></div><div class="revision-browser"><div class="revision-timeline"><svg aria-label="分支关系图" width="${Math.max(42, data.branches.length * 18 + 20)}" height="${rows.length * 66}">${lines}${dots}</svg><div class="revision-rows">${rows.map((r) => `<button class="revision-row" data-revision="${r.id}"><b>${e(r.title)}</b><span>${e(branches.get(r.branch_id)?.name || '分支')} · ${r.id.slice(0,8)} · ${timeAgo(r.created_at)}</span><span>${e(r.author || '自动保存')}</span></button>`).join('')}</div></div><div class="revision-preview"><p id="revision-meta" class="src-note">选择一个版本，与当前工作区比较</p><div id="revision-files"></div><div id="revision-diff"></div></div></div>`,
         footerHtml: '<button class="btn" id="revision-close">关闭</button><button class="btn btn-primary" id="revision-restore" disabled>恢复所选版本</button>',
       });
@@ -327,7 +328,7 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
       m.querySelector('#revision-save').onclick = async () => {
         const title = await promptDialog({ title: '保存项目检查点', label: '版本说明', placeholder: '例如：提交 Nature 前终稿' });
         if (!title) return;
-        try { await api.post(`${base}/history`, { title }); closeModal(); openHistory(); } catch (error) { toast(error.message, 'err'); }
+        try { await api.post(`${base}/history`, { title }); closeModal(); openHistory(mount); } catch (error) { toast(error.message, 'err'); }
       };
       m.querySelector('#revision-create').onclick = async () => {
         const name = await promptDialog({ title: '创建论文分支', label: '分支名称', placeholder: '例如：投稿-ICLR / 实验补充' });
