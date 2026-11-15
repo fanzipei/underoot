@@ -1,4 +1,5 @@
-import{pdfRevision,textIndex,capturePdfAnchor,resolvePdfAnchor}from'../shared/pdf-anchors.js';
+import {plainTex} from '../shared/tex-editing.js';
+import{pdfRevision,textIndex,capturePdfAnchor,resolvePdfAnchor,normalizePdfText,bounds}from'../shared/pdf-anchors.js';
 /**
  * 轻量 PDF 渲染器：用 PDF.js 把页面画到 canvas 上，
  * 不使用浏览器自带的 PDF 插件界面（无工具栏、无缩略图侧栏、无浏览器菜单）。
@@ -26,6 +27,9 @@ export function createPdfViewer(host, { emptyEl = null, onState = () => {}, onPa
   let destroyed = false;
   let resizeTimer = null;
   let observer = null;
+  let focusPoint=null,focusTimer=null;
+  function drawFocus(){if(!focusPoint)return;const wrapper=pages.querySelector(`.pdf-page[data-page="${focusPoint.page}"]`);if(!wrapper)return;pages.querySelectorAll('.pdf-source-flash').forEach(n=>n.remove());const mark=document.createElement('div');mark.className='pdf-source-flash';mark.style.left=(focusPoint.x*100)+'%';mark.style.top=(focusPoint.y*100)+'%';wrapper.append(mark);const r=mark.getBoundingClientRect(),v=pages.getBoundingClientRect();pages.scrollTop+=r.top-v.top-pages.clientHeight/2;pages.scrollLeft+=r.left-v.left-pages.clientWidth/2;clearTimeout(focusTimer);focusTimer=setTimeout(()=>{focusPoint=null;mark.remove();},3000);}
+
 
   const state = () => ({ zoom, pageCount, loading: false, error: null });
   const emit = (extra = {}) => onState({ ...state(), ...extra });
@@ -101,7 +105,7 @@ export function createPdfViewer(host, { emptyEl = null, onState = () => {}, onPa
       }
     }
     pages.scrollTop = scrollTop;
-    emit();
+    emit();drawFocus();
     // 页面 DOM 已重建（加载 / 缩放 / 窗口变化），通知外部重绘评论框选标记
     try { onPagesRendered(); } catch { /* ignore */ }
   }
@@ -200,6 +204,9 @@ export function createPdfViewer(host, { emptyEl = null, onState = () => {}, onPa
   return {
     load,
     getRevision:()=>revision,
+    async textNearPoint(page,x,y){const index=await pageIndex(page),nearest=[...index.spans].sort((a,b)=>Math.hypot((a.x+a.w/2-x)*index.width,(a.y+a.h/2-y)*index.height)-Math.hypot((b.x+b.w/2-x)*index.width,(b.y+b.h/2-y)*index.height))[0];if(!nearest)return '';return index.spans.filter(s=>Math.abs(s.y-nearest.y)<Math.max(s.h,nearest.h)*.6&&Math.abs(s.x+s.w/2-nearest.x-nearest.w/2)<.32).map(s=>s.str).join(' ').slice(0,1500);},
+    async findTextPosition(text){const key=normalizePdfText(plainTex(text));if(key.length<16)return null;const needle=key.slice(0,70),matches=[];let ambiguous=false;for(let number=1;number<=Math.min(pageCount,300);number++){const index=await pageIndex(number),at=index.text.indexOf(needle);if(at<0)continue;if(index.text.indexOf(needle,at+1)>=0){ambiguous=true;continue;}const box=bounds(index.spans.filter(s=>s.end>at&&s.start<at+needle.length));matches.push({page:number,x:box.x*index.width,y:box.y*index.height,approximate:true});}return !ambiguous&&matches.length===1?matches[0]:null;},
+    async revealPosition(point){const size=await pageIndex(point.page);focusPoint={page:point.page,x:Math.max(0,Math.min(1,point.x/size.width)),y:Math.max(0,Math.min(1,point.y/size.height))};drawFocus();},
     async captureAnchor(pageNumber,rect){if(!pdf)throw Error('请先显示 PDF');const index=await pageIndex(pageNumber);return{...capturePdfAnchor(index,pageNumber,rect,revision),width:index.width,height:index.height};},
     async resolveAnchors(comments){if(!pdf)return new Map();const document=pdf,rev=revision,list=comments.filter(c=>c.anchorType==='pdf'&&c.pdfAnchor),result=new Map();if(!list.length)return result;const loaded=[];for(let i=1;i<=Math.min(pageCount,300);i++){if(pdf!==document)return new Map();loaded.push(await pageIndex(i));}for(const c of list)result.set(c.id,resolvePdfAnchor(c.pdfAnchor,loaded,rev));return result;},
     async pageSize(number){const i=await pageIndex(number);return{width:i.width,height:i.height};},
@@ -241,7 +248,7 @@ export function createPdfViewer(host, { emptyEl = null, onState = () => {}, onPa
     destroy() {
       destroyed = true;
       generation += 1;
-      clearTimeout(resizeTimer);
+      clearTimeout(resizeTimer);clearTimeout(focusTimer);
       observer?.disconnect();
       cancelRenders();
       try { pdf?.destroy?.(); } catch { /* ignore */ }

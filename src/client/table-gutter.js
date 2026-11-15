@@ -21,8 +21,8 @@ export function tableEditingGutter({enabled,onOpen}){
  plugin=ViewPlugin.fromClass(class{
   constructor(view){
    this.view=view;this.tables=tableRegions(view.state.doc.toString());this.active=null;this.pointer=null;this.frame=0;this.destroyed=false;this.ariaChanges=[];
-   this.move=event=>{if(event.target.closest?.('.cm-table-edit-button'))return;this.pointer={x:event.clientX,y:event.clientY,buttons:event.buttons,inGutter:!!event.target.closest?.('.cm-gutters')};this.locate();};
-   this.leave=()=>{this.pointer=null;if(!view.dom.querySelector('.cm-table-edit-button:focus'))this.set(null);};
+   this.move=event=>{if(event.buttons||event.target.closest?.('.cm-table-edit-button'))return;this.pointer={x:event.clientX,y:event.clientY,buttons:event.buttons,inGutter:!!event.target.closest?.('.cm-gutters')};this.locate();};
+   this.leave=event=>{this.pointer=null;if(event.buttons)return;if(!view.dom.querySelector('.cm-table-edit-button:focus'))this.set(null);};
    this.blur=event=>{if(event.target.closest?.('.cm-table-edit-button')&&!this.pointer)this.set(null);};
    view.dom.addEventListener('mousemove',this.move);view.dom.addEventListener('mouseup',this.move);view.dom.addEventListener('mouseleave',this.leave);view.dom.addEventListener('focusout',this.blur);
   }

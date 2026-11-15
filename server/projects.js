@@ -1,5 +1,7 @@
+import {storedLog} from '../src/shared/compile-log.js';
+import {editorIndex,sourceByText} from './editor-index.js';
 import{validatePdfAnchor}from'../src/shared/pdf-anchors.js';
-import{captureSourceAnchor,locateSourceAnchors}from'./pdf-anchors.js';
+import{captureSourceAnchor,locateSourceAnchors,sourceToPdf,pdfToSource}from'./pdf-anchors.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -276,7 +278,7 @@ function loadProject(req, res, next) {
   if (!role) return res.status(403).json({ error: '无权访问该项目' });
   if (!['GET', 'HEAD'].includes(req.method) && !['owner', 'editor'].includes(role)) {
     const isDiscussion = /\/comments(?:\/|$)/.test(req.path);
-    if(/\/pdf\/(?:source-anchor|locate-anchors)$/.test(req.path)){req.project=row;req.role=role;return next();}
+    if(/\/pdf\/(?:source-anchor|locate-anchors|source-position|pdf-position)$/.test(req.path)){req.project=row;req.role=role;return next();}
     if (role !== 'reviewer' || !isDiscussion) return res.status(403).json({ error: role === 'viewer' ? '此项目为只读权限' : '审阅者可以评论，不能修改项目内容' });
   }
   req.project = row;
@@ -566,6 +568,14 @@ function resultToJson(result, projectId) {
   };
 }
 
+projectsRouter.get('/:id/compiles',loadProject,(req,res)=>{
+ const limit=Math.max(1,Math.min(100,Math.floor(Number(req.query.limit)||30))),status=req.query.status,q=String(req.query.q||'').slice(0,120),params=[req.project.id];let where='c.project_id=?';
+ if(status==='ok'||status==='error'){where+=' AND c.ok=?';params.push(status==='ok'?1:0);}if(q){where+=" AND instr(lower(c.log),lower(?))>0";params.push(q);}
+ if(req.query.before){const at=Number(req.query.before);if(!Number.isFinite(at))return res.status(400).json({error:'历史游标无效'});where+=' AND (c.created_at<? OR (c.created_at=? AND c.id<?))';params.push(at,at,String(req.query.beforeId||''));}
+ const rows=db.prepare(`SELECT c.id,c.ok,c.ms,c.engine,c.created_at AS createdAt,u.name AS author,length(c.log) AS logLength FROM compiles c LEFT JOIN users u ON u.id=c.user_id WHERE ${where} ORDER BY c.created_at DESC,c.id DESC LIMIT ?`).all(...params,limit+1);res.json({records:rows.slice(0,limit),hasMore:rows.length>limit});
+});
+projectsRouter.get('/:id/compiles/:cid',loadProject,(req,res)=>{const row=db.prepare('SELECT c.id,c.ok,c.ms,c.engine,c.log,c.created_at AS createdAt,u.name AS author FROM compiles c LEFT JOIN users u ON u.id=c.user_id WHERE c.project_id=? AND c.id=?').get(req.project.id,req.params.cid);if(!row)return res.status(404).json({error:'编译记录不存在'});const diagnostics=parseLog(row.log);res.json({record:{...row,errors:row.ok?[]:diagnostics.errors,warnings:diagnostics.warnings}});});
+projectsRouter.post('/:id/compiles/browser',loadProject,(req,res)=>{const {engine,ok,log,ms}=req.body||{};if(!['wasm-pdftex','wasm-xetex'].includes(engine)||typeof ok!=='boolean'||typeof log!=='string'||log.length>1000000||!Number.isFinite(ms)||ms<0||ms>3600000)return res.status(400).json({error:'本地编译记录无效'});const id=crypto.randomUUID(),createdAt=now();db.prepare('INSERT INTO compiles(id,project_id,user_id,ok,ms,engine,log,created_at) VALUES(?,?,?,?,?,?,?,?)').run(id,req.project.id,req.user.id,ok?1:0,ms,engine,storedLog(log),createdAt);res.json({compileId:id,createdAt});});
 projectsRouter.post('/:id/compile', loadProject, async (req, res) => {
   const mainFile = req.body?.mainFile ? normalizeRelPath(req.body.mainFile) : req.project.main_file;
   const clean = req.body?.clean === true;
@@ -594,9 +604,10 @@ projectsRouter.post('/:id/compile', loadProject, async (req, res) => {
     result.engineLabel = raw.engine ? engineLabel(raw.engine) : null;
     compileCache.set(req.project.id, { hash, mainFile, engine: engineKey, epoch: req.project.collab_epoch, at: Date.now(), result });
     try {
+      result.compileId=crypto.randomUUID();result.createdAt=now();
       db.prepare('INSERT INTO compiles (id,project_id,user_id,ok,ms,engine,log,created_at) VALUES (?,?,?,?,?,?,?,?)')
-        .run(crypto.randomUUID(), req.project.id, req.user.id, raw.ok ? 1 : 0,
-          raw.ms || 0, raw.engine || null, (raw.log || '').slice(0, 200000), now());
+        .run(result.compileId, req.project.id, req.user.id, raw.ok ? 1 : 0,
+          raw.ms || 0, raw.engine || null, storedLog(raw.log), result.createdAt);
     } catch { /* ignore */ }
   }
 
@@ -655,6 +666,9 @@ function normalizeAnchor(body, projectId) {
   };
 }
 
+projectsRouter.get('/:id/editor-index',loadProject,(req,res)=>res.json(editorIndex(req.project)));
+projectsRouter.post('/:id/pdf/source-position',loadProject,async(req,res)=>res.json({source:await pdfToSource(req.project,req.body||{})||sourceByText(req.project,req.body?.text)}));
+projectsRouter.post('/:id/pdf/pdf-position',loadProject,async(req,res)=>res.json({point:await sourceToPdf(req.project,req.body||{})}));
 projectsRouter.post('/:id/pdf/source-anchor',loadProject,async(req,res)=>{const source=await captureSourceAnchor(req.project,req.body||{});res.json({source});});
 projectsRouter.post('/:id/pdf/locate-anchors',loadProject,async(req,res)=>{res.json({locations:await locateSourceAnchors(req.project,req.body||{})});});
 projectsRouter.patch('/:id/comments/:cid/pdf-anchor',loadProject,(req,res)=>{const c=getComment(req.project.id,req.params.cid);if(!c||c.anchorType!=='pdf')return res.status(404).json({error:'PDF 评论不存在'});if(req.role!=='owner'&&req.role!=='editor'&&!(req.role==='reviewer'&&c.authorId===req.user.id))return res.status(403).json({error:'需要编辑权限'});let anchor;try{anchor=validatePdfAnchor(req.body.pdfAnchor);}catch{return res.status(400).json({error:'PDF 关联信息无效'});}db.prepare('UPDATE comments SET pdf_anchor=?,page=?,rect=? WHERE id=? AND project_id=?').run(JSON.stringify(anchor),anchor.page,JSON.stringify(anchor.rect),c.id,req.project.id);const comment=getComment(req.project.id,c.id);broadcastComment(req.project.id,'anchored',comment);res.json({comment});});

@@ -1,3 +1,5 @@
+import {suggestionRange} from '../../shared/source-location.js';
+import {highlightSource} from '../source-highlight.js';
 import { EditorView } from '@codemirror/view';
 import { api } from '../api.js';
 import { openPublishing } from '../publishing.js';
@@ -118,7 +120,7 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
   const localAutoKey = `ls.assistant.auto.${user.id}.${project.id}`;
   let automaticLocal = localStorage.getItem(localAutoKey) !== '0';
   const roleLabel = { owner: '所有者', editor: '编辑者', reviewer: '审阅者', viewer: '只读成员' };
-  const inline=assistantEnabled&&canReview?createInlineReview({view,getPath:getActivePath,editable,onAccept:(id)=>decide(id,'accepted'),onReject:(id)=>decide(id,'rejected'),onRequest:({focus:question,range})=>{focus=question;open();run(true,false,false,range);}}):null;
+  const inline=assistantEnabled&&canReview?createInlineReview({view,getPath:getActivePath,editable,onLocate:locate,onAccept:(id)=>decide(id,'accepted'),onReject:(id)=>decide(id,'rejected'),onRequest:({focus:question,range})=>{focus=question;open();run(true,false,false,range);}}):null;
 
   async function refresh() {
     if (destroyed) return;
@@ -238,11 +240,9 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
     try {
       await openFile(suggestion.path);
       const text = view.state.doc.toString();
-      let from = suggestion.from;
-      if (suggestion.before && text.slice(from, from + suggestion.before.length) !== suggestion.before) from = text.indexOf(suggestion.before);
-      if (from < 0) { toast('原文已变化，请重新审阅以定位', 'err'); return; }
-      from = Math.min(from, text.length);
-      view.dispatch({ selection: { anchor: from, head: Math.min(text.length, from + suggestion.before.length) }, effects: EditorView.scrollIntoView(from, { y: 'center' }) });
+      if(getActivePath()!==suggestion.path)return;const range=suggestionRange(text,suggestion);
+      if(!range){toast('没有可靠的原文锚点，请重新检查后定位','err');return;}
+      highlightSource(view,range.from,range.to);if(range.approximate)toast('已定位到最接近的原文位置，请核对上下文');
       view.focus();inline?.show(suggestion);
     } catch (error) { toast(error.message, 'err'); }
   }
@@ -387,6 +387,7 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
        changedChars=0;run(true,false,true,range);
       },45000);
     },
+    onActivePathChange(){inline?.close();inline?.setItems(items);},
     handleEvent(message) { if (message.type === 'assistant:changed') refresh().catch(() => {}); },
     destroy() { destroyed = true; clearTimeout(timer);clearTimeout(autoTimer);inline?.destroy(); panel.classList.remove('open'); },
   };

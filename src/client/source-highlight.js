@@ -1,0 +1,4 @@
+import {StateEffect,StateField} from '@codemirror/state';import {Decoration,EditorView} from '@codemirror/view';
+const show=StateEffect.define(),timers=new WeakMap();
+export const sourceHighlight=StateField.define({create:()=>Decoration.none,update(value,tr){value=value.map(tr.changes);for(const e of tr.effects)if(e.is(show))value=e.value&&e.value.to>e.value.from?Decoration.set([Decoration.mark({class:'tex-source-highlight'}).range(e.value.from,e.value.to)]):Decoration.none;return value;},provide:f=>EditorView.decorations.from(f)});
+export function highlightSource(view,from,to){clearTimeout(timers.get(view));view.dispatch({selection:{anchor:from,head:to},effects:[show.of({from,to}),EditorView.scrollIntoView(from,{y:'center'})]});timers.set(view,setTimeout(()=>{if(view.dom.isConnected)view.dispatch({effects:show.of(null)});},6000));}

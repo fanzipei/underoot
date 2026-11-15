@@ -94,9 +94,12 @@ export function createComments({
   floatBtn.style.display = 'none';
   document.body.appendChild(floatBtn);
 
+  let selecting=false,commentPress=null;
+  const selectionEnd=()=>{if(selecting){selecting=false;updateFloatButton();}};
+  document.addEventListener('mouseup',selectionEnd);
   function updateFloatButton() {
     const sel = view.state.selection.main;
-    if (!canComment || !host.isConnected || !view.dom.isConnected || !selectablePath() || sel.empty) {
+    if (selecting || !canComment || !host.isConnected || !view.dom.isConnected || !selectablePath() || sel.empty) {
       floatBtn.style.display = 'none'; return;
     }
     const quote = view.state.doc.sliceString(sel.from, sel.to).trim();
@@ -138,13 +141,8 @@ export function createComments({
   const extension = [
     commentField,
     EditorView.domEventHandlers({
-      mousedown(event) {
-        const el = event.target.closest?.('.cm-comment-range, .cm-comment-line');
-        if (!el) return false;
-        const id = el.dataset.commentId;
-        if (id) { openPanel(); focusThread(id); }
-        return false;
-      },
+      mousedown(event){commentPress=null;if(event.button!==0)return false;selecting=true;updateFloatButton();const el=event.target.closest?.('.cm-comment-range, .cm-comment-line');if(el?.dataset.commentId)commentPress={id:el.dataset.commentId,x:event.clientX,y:event.clientY};return false;},
+      mouseup(event){const p=commentPress;commentPress=null;if(p&&event.button===0&&Math.hypot(event.clientX-p.x,event.clientY-p.y)<4&&view.state.selection.main.empty){openPanel();focusThread(p.id);}return false;},
     }),
     EditorView.updateListener.of((update) => {
       if (update.selectionSet || update.docChanged) updateFloatButton();
@@ -581,6 +579,7 @@ export function createComments({
     getCount: () => comments.filter((c) => !c.resolved).length,
     destroy() {
       destroyed = true;
+      document.removeEventListener('mouseup',selectionEnd);
       floatBtn.remove();
       panel.classList.remove('open');
     },

@@ -1,3 +1,8 @@
+import {sourceHighlight,highlightSource} from '../source-highlight.js';
+import {openCompileHistory} from '../compile-history.js';
+import {recentLog} from '../../shared/compile-log.js';
+import {contextMenu,closeContextMenu} from '../context-menu.js';
+import {TEX_SNIPPETS,texSymbols,completionTarget} from '../../shared/tex-editing.js';
 import {orderFiles} from '../../shared/file-order.js';
 import {tableEditingGutter} from '../table-gutter.js';
 import {openAgentAccess} from '../agent-access.js';
@@ -98,32 +103,6 @@ const COMMANDS = [
 const ENVIRONMENTS = ['equation', 'equation*', 'align', 'align*', 'itemize', 'enumerate', 'figure', 'table', 'tabular', 'abstract', 'center', 'quote', 'verbatim', 'theorem', 'proof'];
 
 function latexCompletions(context) {
-  const before = context.matchBefore(/\{[^}]*$/);
-  const line = context.state.doc.lineAt(context.pos).text;
-
-  // \ref{ / \cite{ / \label{ 内补全
-  if (before) {
-    const keyword = line.match(/\\(ref|eqref|pageref|cite|citep|citet|label|begin|end|usepackage|documentclass)\{[^}]*$/);
-    if (keyword) {
-      const kind = keyword[1];
-      const docText = context.state.doc.toString();
-      const labels = [...docText.matchAll(/\\label\{([^}]+)\}/g)].map((m) => m[1]);
-      const refs = [...docText.matchAll(/\\bibitem\{([^}]+)\}|@\w+\{([^,]+),/g)].map((m) => m[1] || m[2]);
-      let options = [];
-      if (['ref', 'eqref', 'pageref'].includes(kind)) options = labels;
-      else if (['cite', 'citep', 'citet'].includes(kind)) options = refs;
-      else if (['begin', 'end'].includes(kind)) options = ENVIRONMENTS;
-      if (options.length) {
-        return {
-          from: before.from + 1,
-          options: options.map((o) => ({ label: o, type: 'variable' })),
-          validFor: /^[^}]*$/,
-        };
-      }
-    }
-    return null;
-  }
-
   const word = context.matchBefore(/\\[a-zA-Z]*/);
   if (!word) return null;
   if (word.from === word.to && !context.explicit) return null;
@@ -208,6 +187,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
   let tabs = [];
   let activePath = null;
+  let completionData=null,completionPromise=null,completionAt=0;
   let docs = new Map(); // path -> {doc, provider, ytext, undo}
   let compiling = false;
   const browserTeX = new BrowserTeX((message)=>{const status=root.querySelector('#wasm-progress');if(status){status.textContent=message;status.hidden=!message;}}); let browserPdf = null;
@@ -217,7 +197,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   const assistantEnabled = enabledExtension(extensionList, 'underoot.assistant');
   let compileQueued = false;
   let autoCompile = localStorage.getItem('ls.autocompile') !== '0';
-  let currentCompile = null;
+  let currentCompile = null,lastLogResult=null,loadingLatestLog=false;
   let pdfVisible = localStorage.getItem('ls.pdf') !== '0';
 
   /* ---------- DOM 骨架 ---------- */
@@ -320,6 +300,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
           <div class="spacer"></div>
           <button class="btn btn-sm" id="btn-fix-clash" style="display:none">${icon('shield')}一键修复</button>
           <button class="btn btn-sm" id="btn-wasm-server" style="display:none">切换服务器编译</button>
+          <button class="btn btn-sm" id="btn-log-history">查看完整记录</button>
           <span id="log-summary" style="font-size:11.5px;color:var(--muted)"></span>
           <button class="btn btn-ghost btn-icon btn-sm" id="log-close" title="关闭">${icon('close')}</button>
         </div>
@@ -392,12 +373,19 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
         history(),
         foldGutter(),
         drawSelection(),
+        sourceHighlight,
         dropCursor(),
         EditorState.allowMultipleSelections.of(true),
         indentOnInput(),
         bracketMatching(),
         closeBrackets(),
-        autocompletion({ override: [latexCompletions], activateOnTyping: true, icons: false }),
+        EditorView.domEventHandlers({mousedown(event,editor){
+          if(event.button!==0||event.detail!==1||event.shiftKey||event.altKey||event.ctrlKey||event.metaKey)return false;
+          const sel=editor.state.selection.main,pos=editor.posAtCoords({x:event.clientX,y:event.clientY});
+          if(!sel.empty&&pos!=null&&pos>=sel.from&&pos<=sel.to)editor.dispatch({selection:{anchor:pos},userEvent:'select.pointer'});
+          return false;
+        }}),
+        autocompletion({ override: [projectCompletions], activateOnTyping: true, icons: false }),
         rectangularSelection(),
         crosshairCursor(),
         highlightActiveLine(),
@@ -433,6 +421,24 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     els.stPos.textContent = `行 ${line.number}, 列 ${sel.head - line.from + 1}`;
     const selLen = view.state.selection.ranges.reduce((n, r) => n + (r.to - r.from), 0);
     els.stSel.textContent = selLen > 0 ? `已选 ${selLen} 字符` : `${view.state.doc.length} 字符`;
+  }
+
+  async function projectCompletions(context){
+    const target=completionTarget(context.state.doc.sliceString(Math.max(0,context.pos-1600),context.pos),context.pos);
+    if(!target)return latexCompletions(context);
+    if(['begin','end'].includes(target.kind))return{from:target.from,options:ENVIRONMENTS.map(label=>({label,type:'keyword'})),validFor:/^[^{}]*$/};
+    if(!completionData||Date.now()-completionAt>10000){
+      if(!completionPromise)completionPromise=api.get(`/api/projects/${projectId}/editor-index`).then(data=>{completionData=data;completionAt=Date.now();}).catch(()=>{}).finally(()=>completionPromise=null);
+      await completionPromise;
+    }
+    const data=completionData||{labels:[],citations:[],images:[]},labels=new Map(data.labels.map(s=>[s.key,s.path])),citations=new Map(data.citations.map(s=>[s.key,s.path]));
+    for(const entry of docs.values()){if(!/\.(tex|bib)$/i.test(entry.path))continue;const symbols=entry.completionSymbols||(entry.completionSymbols=texSymbols(entry.ytext.toString(),/\.bib$/i.test(entry.path)));for(const key of symbols.labels)labels.set(key,entry.path);for(const key of symbols.citations)citations.set(key,entry.path);}
+    let options=[];
+    if(target.kind.startsWith('cite'))options=[...citations].map(([label,detail])=>({label,detail,type:'constant'}));
+    else if(target.kind==='includegraphics')options=data.images.map(label=>({label,detail:'图片路径',type:'text'}));
+    else if(target.kind==='label')options=[...['sec:','fig:','tab:','eq:'].map(label=>({label,detail:'新标签前缀',type:'variable'})),...[...labels].map(([label,path])=>({label,detail:'已定义 · '+path,type:'variable'}))];
+    else options=[...labels].map(([label,detail])=>({label,detail,type:'variable'}));
+    return{from:target.from,options,validFor:target.kind.startsWith('cite')?/^[^,{}\n]*$/:/^[^{}\n]*$/};
   }
 
   /* ---------- 协作评论（源码选区 + PDF 圈选） ---------- */
@@ -568,6 +574,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   async function refreshTree() {
     const data = await api.get(`/api/projects/${projectId}/tree`);
     tree = data.tree;
+    completionAt=0;
     project.mainFile = data.mainFile || project.mainFile;
     renderTree();
   }
@@ -657,6 +664,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     });
     provider.awareness.on('change', renderCrowd);
     doc.on('update', (_u, origin) => {
+      entry.completionSymbols=null;
       if (origin === provider) return;
       if (path === activePath) setSaveState('dirty');
     });
@@ -700,7 +708,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     if(sideTab==='history'&&historyMode==='file')renderSideHistory();
     renderTabs();
     renderTree();
-    comments?.onActivePathChange();
+    comments?.onActivePathChange();research?.onActivePathChange();
     if (binaryViewer) { binaryViewer.destroy(); binaryViewer = null; }
 
     if (isImage(path) || isPdf(path)) {
@@ -839,6 +847,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }
 
   function applyCompileResult(res, { local = false, manual = false } = {}) {
+    res.createdAt=res.createdAt||Date.now();
     currentCompile = res;
     renderLog(res);
     if (res.ok && res.pdf) showPdf(res.pdf);
@@ -931,6 +940,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
           if (file) file.content = view.state.doc.toString();
         }
         res = await browserTeX.compile(project.mainFile, payload.files, project.engine);
+        if(canEdit){try{Object.assign(res,await api.post(`/api/projects/${projectId}/compiles/browser`,{engine:res.engine,ok:!!res.ok,log:res.log||'',ms:res.ms||0}));}catch{/* Preview remains usable when history cannot be saved. */}}
         if (res.ok) { if (browserPdf) URL.revokeObjectURL(browserPdf); browserPdf = res.pdf; }
       } else res = await api.post(`/api/projects/${projectId}/compile`, {
         mainFile: project.mainFile,
@@ -970,6 +980,43 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     els.pdfDownload.setAttribute('download', 'main.pdf');
   }
 
+  const guarded=(path,before)=>{if(activePath!==path||view.state.readOnly||view.state.doc.toString()!==before)throw Error('文件或选区内容已变化，请重新打开右键菜单');};
+  async function copyText(text){
+    if(navigator.clipboard?.writeText&&window.isSecureContext){try{await navigator.clipboard.writeText(text);return;}catch{}}
+    const box=document.createElement('textarea');box.value=text;box.style.cssText='position:fixed;left:-9999px;top:0';document.body.append(box);box.select();const ok=document.execCommand('copy');box.remove();view.focus();if(!ok)throw Error('浏览器限制了复制，请使用 Ctrl+C');
+  }
+  async function pasteText(){
+    if(navigator.clipboard?.readText&&window.isSecureContext){try{return await navigator.clipboard.readText();}catch{}}
+    return new Promise(resolve=>{const {root:dialog,close}=modal({title:'粘贴文本',bodyHtml:'<p class="src-note">浏览器限制了直接读取剪贴板，请在下方按 Ctrl+V（macOS 为 ⌘V）。</p><textarea class="input" rows="7" aria-label="要粘贴的文本"></textarea>',footerHtml:'<button class="btn" id="paste-cancel">取消</button><button class="btn btn-primary" id="paste-confirm">粘贴到编辑器</button>'});const done=value=>{close();resolve(value);};dialog.querySelector('#paste-cancel').onclick=()=>done(null);dialog.querySelector('#paste-confirm').onclick=()=>done(dialog.querySelector('textarea').value);dialog.querySelector('textarea').focus();});
+  }
+  const menuAction=fn=>()=>Promise.resolve().then(fn).catch(error=>toast(error.message,'err'));
+  async function jumpToPdf(path,line){
+    const revision=pdfViewer.getRevision();if(!revision)throw Error('请先编译并显示 PDF，再跳转');
+    let {point}=await api.post(`/api/projects/${projectId}/pdf/pdf-position`,{revision,path,line,mainFile:project.mainFile});
+    if(!point&&activePath===path)point=await pdfViewer.findTextPosition(view.state.doc.line(Math.min(line,view.state.doc.lines)).text);
+    if(revision!==pdfViewer.getRevision())throw Error('PDF 已更新，请重新定位');if(!point)throw Error('未找到 PDF 位置，请先重新编译（服务器编译支持 SyncTeX）');
+    if(!pdfVisible){pdfVisible=true;localStorage.setItem('ls.pdf','1');els.panePdf.style.display='flex';}
+    await pdfViewer.revealPosition(point);if(point.approximate)toast('已按文字匹配到 PDF 的近似位置');
+  }
+  function editorContext(event){
+    if(!view.scrollDOM.contains(event.target)||event.target.closest('.cm-gutters'))return;event.preventDefault();
+    const at=view.posAtCoords({x:event.clientX,y:event.clientY},false)??view.state.selection.main.head;const sel=view.state.selection.main;if(sel.empty||at<sel.from||at>sel.to)view.dispatch({selection:{anchor:at}});
+    const selected=view.state.selection.main,path=activePath,before=view.state.doc.toString(),text=view.state.sliceDoc(selected.from,selected.to),editable=canEdit&&!view.state.readOnly;
+    const replace=value=>{guarded(path,before);view.dispatch({changes:{from:selected.from,to:selected.to,insert:value},selection:{anchor:selected.from+value.length},userEvent:'input.paste'});view.focus();};
+    contextMenu(event.clientX,event.clientY,[
+      {label:'剪切',disabled:!editable||selected.empty,run:menuAction(async()=>{await copyText(text);replace('');})},
+      {label:'复制',disabled:selected.empty,run:menuAction(()=>copyText(text))},
+      {label:'粘贴',disabled:!editable,run:menuAction(async()=>{const text=await pasteText();if(text!==null)replace(text);})},
+      {sep:true},{label:'跳转到 PDF',disabled:!path||!/\.tex$/i.test(path),run:menuAction(()=>jumpToPdf(path,view.state.doc.lineAt(selected.head).number))},
+      {label:'插入 TeX 代码段',disabled:!editable||!/\.tex$/i.test(path||''),children:TEX_SNIPPETS.map(snippet=>({label:snippet.label,run:menuAction(()=>{guarded(path,before);const at=view.state.doc.lineAt(selected.to).to,prefix=at&&before[at-1]!=='\n'?'\n':'',marker=snippet.text.indexOf('$0'),insert=prefix+snippet.text.replace('$0','')+'\n';view.dispatch({changes:{from:at,insert},selection:{anchor:at+prefix.length+(marker<0?insert.length:marker)},userEvent:'input'});view.focus();if(snippet.id==='figure')toast('图片模板已插入；导言区需加载 graphicx');if(snippet.id==='align')toast('多行公式模板已插入；导言区需加载 amsmath');})}))}
+    ],()=>view.focus());
+  }
+  async function pdfContext(event){
+    const page=event.target.closest('.pdf-page');if(!page)return;event.preventDefault();const rect=page.getBoundingClientRect(),number=Number(page.dataset.page),x=(event.clientX-rect.left)/rect.width,y=(event.clientY-rect.top)/rect.height,revision=pdfViewer.getRevision();
+    contextMenu(event.clientX,event.clientY,[{label:'跳转到 TeX 文本',run:menuAction(async()=>{const size=await pdfViewer.pageSize(number),{source}=await api.post(`/api/projects/${projectId}/pdf/source-position`,{revision,page:number,x,y,width:size.width,height:size.height,text:await pdfViewer.textNearPoint(number,x,y),mainFile:project.mainFile});if(revision!==pdfViewer.getRevision())throw Error('PDF 已更新，请重新定位');if(!source)throw Error('未找到源码位置，请使用服务器编译生成 SyncTeX 后重试');await openFile(source.path);if(activePath!==source.path)return;const line=view.state.doc.line(Math.min(source.line,view.state.doc.lines));highlightSource(view,line.from,line.to);view.focus();if(source.approximate)toast('已按文字匹配到原文的近似位置');})}]);
+  }
+  view.dom.addEventListener('contextmenu',editorContext);els.pdfBody.addEventListener('contextmenu',pdfContext);
+
   /* ---------- 日志 / 问题 ---------- */
   let logTab = 'problems';
   // 打开项目时静态体检发现的问题（不必等编译失败）
@@ -986,9 +1033,9 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     ];
     const errCount = (res.errors || []).length;
     const warnCount = (res.warnings || []).length;
-    els.logSummary.innerHTML = res.ok
+    els.logSummary.innerHTML = `<span>最近一次 · ${new Date(res.createdAt||Date.now()).toLocaleTimeString('zh-CN')}</span> `+(res.ok
       ? `<span class="badge badge-green">编译成功 ${res.ms} ms</span>${warnCount ? ` <span class="badge badge-amber">${warnCount} 警告</span>` : ''}`
-      : `<span class="badge badge-red">${errCount} 个错误</span>${warnCount ? ` <span class="badge badge-amber">${warnCount} 警告</span>` : ''}`;
+      : `<span class="badge badge-red">${errCount} 个错误</span>${warnCount ? ` <span class="badge badge-amber">${warnCount} 警告</span>` : ''}`);
 
     const fixableCodes = new Set(['option-clash', 'unicode-math-bold']);
     const fromLog = (res.errors || []).some((e) => fixableCodes.has(e.code));
@@ -1008,7 +1055,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     }
 
     if (logTab === 'raw') {
-      els.logBody.innerHTML = `<div class="log-raw">${escapeHtml(res.log || '（无日志）')}</div>`;
+      els.logBody.innerHTML = `<div class="log-raw">${escapeHtml(recentLog(res.log) || '（无日志）')}</div>`;
       return;
     }
     if (!problems.length) {
@@ -1031,7 +1078,9 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   }
 
   async function gotoProblem(p) {
-    const file = p.file && p.file.endsWith('.tex') ? p.file.replace(/^\.\//, '') : project.mainFile;
+    const candidate=p.file?.replace(/\\/g,'/').replace(/^\.\//,'');
+    const file=candidate&&findFile(tree,candidate)?candidate:!p.file?project.mainFile:null;
+    if(!file){toast('该诊断来自项目外部文件：'+(p.file||''),'err');return;}
     if (file !== activePath) {
       try { await openFile(file); } catch { /* ignore */ }
     }
@@ -1047,6 +1096,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
 
   function openLogPanel() {
     els.logPanel.style.display = 'flex';
+    if(!currentCompile?.log&&!lastLogResult&&!loadingLatestLog){loadingLatestLog=true;api.get(`/api/projects/${projectId}/compiles?limit=1`).then(async data=>{if(!data.records[0])return;const {record}=await api.get(`/api/projects/${projectId}/compiles/${data.records[0].id}`);if(!currentCompile?.log&&root.isConnected){lastLogResult={...record,compileId:record.id};renderLog(lastLogResult);}}).catch(()=>{}).finally(()=>loadingLatestLog=false);}
   }
 
   function openEngineHelp() {
@@ -1228,12 +1278,13 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
   root.querySelector('#pdf-download').onclick = (e) => {
     if (!currentCompile?.ok) { e.preventDefault(); compile(true); }
   };
+  root.querySelector('#btn-log-history').onclick=()=>openCompileHistory(projectId,currentCompile||lastLogResult);
   root.querySelector('#log-close').onclick = () => { els.logPanel.style.display = 'none'; };
   root.querySelectorAll('.log-tabs button').forEach((btn) => {
     btn.onclick = () => {
       logTab = btn.dataset.tab;
       root.querySelectorAll('.log-tabs button').forEach((b) => b.classList.toggle('active', b === btn));
-      if (currentCompile) renderLog(currentCompile);
+      if (currentCompile||lastLogResult) renderLog(currentCompile||lastLogResult);
     };
   });
 
@@ -1489,6 +1540,7 @@ export async function renderEditor(root, projectId, { user, onExit, onUserUpdate
     eventClosed = true;
     try { comments?.destroy(); } catch { /* ignore */ }
     try { research?.destroy(); } catch { /* ignore */ }
+    closeContextMenu();view.dom.removeEventListener('contextmenu',editorContext);els.pdfBody.removeEventListener('contextmenu',pdfContext);
     closeExtensionWindows();
     try { eventWs?.close(); } catch { /* ignore */ }
     try { pdfViewer.destroy(); } catch { /* ignore */ }
