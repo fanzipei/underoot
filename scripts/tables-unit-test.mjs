@@ -1,3 +1,4 @@
+import {excelCells, configureEmptyGrid} from '../src/plugins/table-starter.js';
 import assert from 'node:assert/strict';
 import {findTables,parseTable,serializeTable,replaceTable,escapeCell,validateCell} from '../src/plugins/table-model.js';
 let n=0;const test=(name,fn)=>{fn();n++;console.log('✓ '+name);};
@@ -55,5 +56,27 @@ test('empty tabular preserves its column spec, comments and closing rule when fi
  const updated=replaceTable(model);
  assert.ok(updated.indexOf(' & 12')<updated.indexOf('\\bottomrule'));
  assert.equal(parseTable(updated).rows[0][1].tex,'12');
+});
+test('Excel TSV preserves quoted delimiters, Excel quotes, CRLF and trailing cells',()=>{
+ assert.deepEqual(excelCells('A\t"two\tparts"\t\r\n"x""y\r\nz"\t12\t\r\n'),
+  [['A','two\tparts',''],['x"y\r\nz','12','']]);
+ assert.throws(()=>excelCells('x\t'.repeat(24)),/24 列/);
+ assert.throws(()=>excelCells('x\n'.repeat(201)),/200 行/);
+});
+test('empty-grid sizing keeps pending data and does not replace custom column definitions',()=>{
+ const source=String.raw`\begin{tabular}{>{\centering}p{3cm}c}
+% original row comment
+\end{tabular}`;
+ const initial=parseTable(source);
+ assert.throws(()=>configureEmptyGrid(initial, 2, 3),/自定义列/);
+ const draft=configureEmptyGrid(initial,2,2,excelCells('R&D\t10%\n\t#2'));
+ const filled=replaceTable(draft), parsed=parseTable(filled);
+ assert.equal(parsed.spec,initial.spec);
+ assert.ok(filled.includes('% original row comment'));
+ assert.deepEqual(parsed.rows.map(row=>row.map(cell=>cell.tex)),[
+  [String.raw`R\&D`,String.raw`10\%`],['',String.raw`\#2`],
+ ]);
+ assert.throws(()=>configureEmptyGrid(draft,1,2),/移除已填写/);
+ assert.throws(()=>configureEmptyGrid(draft,2,2,[['replacement']]),/已有内容/);
 });
 console.log(`Table model: ${n}/${n} passed`);

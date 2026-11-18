@@ -1,3 +1,4 @@
+import {excelCells, configureEmptyGrid} from './table-starter.js';
 import {tableViewport} from './table-viewport.js';
 import {selectedTableIndex} from '../shared/table-regions.js';
 import katex from 'katex';
@@ -19,7 +20,13 @@ function originalBorders(td,cell,r){
  if(model.spec.includes('|')){td.style.borderLeft='1px solid #829497';td.style.borderRight='1px solid #829497';}
 }
 function current(){return model?.rows[selected[0]]?.[selected[1]];}
-function controls(){for(const id of ['files','tables','open'])$(id).disabled=busy;
+function controls(){
+ const setup = model?.emptyRowAt != null && writable;
+ $('empty-grid-tools').hidden = !setup;
+ for (const id of ['starter-rows', 'starter-cols', 'apply-grid-size']) $(id).disabled = busy || !setup;
+ $('starter-cols').disabled ||= !!model?.custom;
+ $('excel-paste').disabled = busy || !setup;
+for(const id of ['files','tables','open'])$(id).disabled=busy;
  if(regionMode){$('files').closest('label').hidden=true;$('tables').closest('label').hidden=true;$('new').hidden=true;}const off=!model||!writable||busy;for(const id of ['save','cell','plain','parse','new','bold','add-row','remove-row','add-col','remove-col','merge','split'])$(id).disabled=id==='new'?(!doc||!writable||busy):off;for(const id of ['style','stretch','padding','align'])$(id).disabled=off||model.custom;for(const id of ['bold','parse','add-row','remove-row','add-col','remove-col','merge','split'])$(id).disabled=off||model.custom;$('parse').disabled ||= !!model?.emptyFloat || (regionMode && !!model?.float);$('source').readOnly=!model||!writable||busy||model.custom||$('parse').disabled;}
 function regionSource() {
  const block = serializeTable(model);
@@ -27,6 +34,7 @@ function regionSource() {
 }
 function sourcePreview(){if(!model)return;try{$('source').value=regionSource();rawChanged=false;$('packages').textContent='样式所需宏包：'+(requiredPackages(model).join('、')||'无额外宏包')+(requiredPackages(model).length?'。若主文件尚未加载，请在导言区添加相应 \\usepackage{...}。':'。');}catch(e){status(e.message,true);}}
 function paint(){
+ if (model?.emptyRowAt != null) { $('starter-rows').value = model.rows.length; $('starter-cols').value = model.cols.length; }
  $('grid').replaceChildren();if(!model){controls();preview.refresh();return;}const table=document.createElement('table');table.className=model.style+(model.custom?' original-layout':'');table.style.lineHeight=String(model.stretch*1.4);
  model.rows.forEach((row,r)=>{const tr=document.createElement('tr');let col=0;row.forEach((cell,c)=>{if(cell.covered){col+=cell.span;return;}const td=document.createElement('td');td.tabIndex=0;td.colSpan=cell.span;td.rowSpan=Math.max(1,cell.rowSpan||1);td.dataset.row=r;td.dataset.cell=c;originalBorders(td,cell,r);td.style.paddingLeft=td.style.paddingRight=model.padding*1.33+'px';const alignment=(cell.align||(model.custom?model.columnAlignments?.[col]:null)||model.cols[col]||'l').replace(/\|/g,'');td.style.textAlign=alignment==='r'?'right':alignment==='c'?'center':'left';previewText(td,cell.tex);td.classList.toggle('selected',selected[0]===r&&selected[1]===c);td.setAttribute('aria-label',`第 ${r+1} 行第 ${col+1} 列：${cell.tex}`);td.onclick=()=>select(r,c);td.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(r,c);$('cell').focus();}};tr.append(td);col+=cell.span;});table.append(tr);});$('grid').append(table);preview.refresh();
  $('style').value=model.style;$('stretch').value=model.stretch;$('padding').value=model.padding;const cell=current();$('cell').value=cell?.tex||'';$('cell-label').textContent=`第 ${selected[0]+1} 行 · 单元格 ${selected[1]+1}`;const col=model.rows[selected[0]].slice(0,selected[1]).reduce((n,c)=>n+c.span,0),align=(cell?.align||model.cols[col]||'l').replace(/\|/g,'');$('align').value=['l','c','r'].includes(align)?align:'l';controls();sourcePreview();
@@ -40,6 +48,32 @@ window.addEventListener('focus',()=>{if(!doc||busy)return;const path=doc.path,ha
 function loadRegion(result){doc=result;tables=[];model=null;$('grid').replaceChildren();$('source').value=result.content;controls();document.querySelector('header strong').textContent='当前表格区域';document.querySelector('header span').textContent='只编辑从 TeX 中选中的这一段表格';model=parseTable(result.content);selected=[0,0];dirty=false;newTable=false;rawChanged=false;let label=$('region-label');if(!label){label=document.createElement('strong');label.id='region-label';$('open').parentElement.prepend(label);}label.textContent=`当前表格 · ${result.path} · 第 ${result.startLine}–${result.endLine} 行`;$('open').textContent='重新读取当前表格 / 丢弃草稿';paint();status(model.custom?'复杂表格 · 仅编辑内容，合并单元格与原格式代码保持不变；预览近似，最终以 PDF 为准。':'仅编辑当前表格片段；保存只写回这个区域');}
 async function open(path,selection=null){doc=await api.documents.read(path);refreshTables(selectedTableIndex(doc.content,selection));}
 function mutate(fn){if(rawChanged)throw Error('请先从 TeX 更新网格');if(model.custom)throw Error('此表仅允许单元格内容编辑');fn();model.structural=true;mark();paint();}
+function initializeGrid(rows, columns, values) {
+ if (rawChanged) throw Error('请先从 TeX 更新网格');
+ model = configureEmptyGrid(model, rows, columns, values);
+ selected = [0, 0];
+ mark();
+ paint();
+}
+$('apply-grid-size').onclick = () =>
+ run(() => initializeGrid($('starter-rows').valueAsNumber, $('starter-cols').valueAsNumber));
+$('grid-size').onkeydown = event => {
+ if (event.key === 'Enter' && event.target.matches('input')) $('apply-grid-size').click();
+};
+function pasteIntoEmptyGrid(event) {
+ if (!event.clipboardData || !writable || busy || model?.emptyRowAt == null) return;
+ event.preventDefault();
+ run(() => {
+  const cells = excelCells(event.clipboardData.getData('text/plain'));
+  const columns = Math.max(...cells.map(row => row.length));
+  const freshFloat = model.emptyFloat && !dirty;
+  initializeGrid(freshFloat ? cells.length : Math.max(model.rows.length, cells.length),
+    freshFloat ? columns : Math.max(model.cols.length, columns), cells);
+  status(`已填入 ${cells.length} 行 × ${columns} 列，确认后保存回 TeX`);
+ });
+}
+$('excel-paste').onpaste = pasteIntoEmptyGrid;
+$('grid').onpaste = pasteIntoEmptyGrid;
 $('files').onchange=()=>run(async()=>{const path=$('files').value;$('files').value=doc?.path;noDraft();await open(path);$('files').value=path;});
 $('open').onclick=()=>run(async()=>{if(regionMode)loadRegion(await api.documents.readTable());else await open($('files').value);});
 $('tables').onchange=()=>run(async()=>{noDraft();refreshTables(Number($('tables').value));});

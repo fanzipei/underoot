@@ -126,7 +126,7 @@ export function serializeTable(model){
  if (model.floatModel) {
   const {floatModel} = model;
   const grid = serializeTable({...floatModel, rows:model.rows, cols:model.cols,
-   style:model.style, stretch:model.stretch, padding:model.padding, structural:model.structural});
+   style:model.style, stretch:model.stretch, padding:model.padding, structural:model.structural, emptyGridEdited:model.emptyGridEdited});
   if (grid === floatModel.fullSource) return model.source;
   const newline = model.source.includes('\r\n') ? '\r\n' : '\n';
   const at = model.end - model.from;
@@ -136,14 +136,14 @@ export function serializeTable(model){
  }
  if (!model.structural && model.emptyRowAt !== null) {
   const original = model.fullSource.slice(model.from, model.to);
-  const row = model.rows[0];
-  if (!row.some(cell => cell.tex !== cell.original)) return original;
-  for (const cell of row) validateCell(cell.tex);
+  if (!model.emptyGridEdited && !model.rows.some(row => row.some(cell => cell.tex !== cell.original))) return original;
+  for (const row of model.rows) for (const cell of row) validateCell(cell.tex);
   const at = model.emptyRowAt - model.from;
   const before = original.slice(0, at);
   const newline = original.includes('\r\n') ? '\r\n' : '\n';
+  const rows = model.rows.map(row => row.map(cell => cell.tex).join(' & ') + ' ' + '\\'.repeat(2));
   return before + (before.endsWith('\n') ? '' : newline) +
-   row.map(cell => cell.tex).join(' & ') + ' ' + '\\'.repeat(2) + newline + original.slice(at);
+   rows.join(newline) + newline + original.slice(at);
  }
  for(const row of model.rows)for(const c of row)if(model.structural||c.tex!==c.original)validateCell(c.tex);
  if(!model.structural){let out=model.fullSource.slice(model.from,model.to);const edits=model.rows.flat().filter(c=>c.tex!==c.original).sort((a,b)=>b.from-a.from);for(const c of edits){const value=c.tex;out=out.slice(0,c.from-model.from)+value+out.slice(c.to-model.from);}return out;}

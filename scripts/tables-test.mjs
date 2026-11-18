@@ -1,3 +1,4 @@
+import {excelCells, configureEmptyGrid} from '../src/plugins/table-starter.js';
 import assert from 'node:assert/strict';
 import AdmZip from 'adm-zip';
 import {inspectExtensionZip} from '../server/extension-packages.js';
@@ -22,7 +23,7 @@ Baseline & 0.80 & 10 \\
 Conclusion remains unchanged.
 \end{document}`;
 check('bundled table editor is registered with minimum document permissions',(await req('/api/extensions',owner)).data.extensions.some(e=>e.id==='underoot.tables'&&e.enabled&&e.permissions.length===3));
-const asset=await fetch(BASE+'/extensions/underoot.tables/1.5.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
+const asset=await fetch(BASE+'/extensions/underoot.tables/1.6.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
 check('table editor cannot invoke an undeclared model capability',(await rpc('ai.complete',{instruction:'no'})).status===403);
 await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:source});
 const doc=(await rpc('documents.read',{path:'main.tex'})).data.result,m=parseTable(doc.content);m.rows[1][1].tex='$0.93 \\pm 0.01$';const content=replaceTable(m);
@@ -83,10 +84,12 @@ const emptyAt = emptyFile.indexOf(emptyFloat);
 const empty = (await readScoped({path:'empty.tex',from:emptyAt,to:emptyAt+emptyFloat.length,source:emptyFloat})).data.result;
 const emptyModel = parseTable(empty.content);
 check('empty table* opens with a draft row and leaves untouched source intact',replaceTable(emptyModel)===emptyFloat&&emptyModel.rows[0].length===2);
-emptyModel.rows[0][0].tex='Baseline';
-const filled = replaceTable(emptyModel);
+const sizedGrid = configureEmptyGrid(emptyModel, 3, 3);
+check('setting the grid dimensions emits even the blank rows and columns',parseTable(replaceTable(sizedGrid)).rows.every(row=>row.length===3)&&parseTable(replaceTable(sizedGrid)).rows.length===3);
+const excelGrid = configureEmptyGrid(sizedGrid, 3, 3, excelCells('Method\tScore\tNote\r\nBaseline\t10%\t"R&D\r\n#1"\r\n'));
+const filled = replaceTable(excelGrid);
 const filledResult = await rpc('documents.table.write',{...empty,before:empty.content,content:filled},{consent:true});
-check('first cell edit creates a grid while preserving float, caption and surrounding prose',filledResult.status===200&&filled.includes('Baseline')&&(await rpc('documents.read',{path:'empty.tex'})).data.result.content===emptyFile.replace(emptyFloat,filled));
+check('Excel paste creates a grid while preserving float, caption and surrounding prose',filledResult.status===200&&filled.includes('Baseline')&&(await rpc('documents.read',{path:'empty.tex'})).data.result.content===emptyFile.replace(emptyFloat,filled));
 if((await req('/api/system/engines',owner)).data.engines.some(e=>e.id==='xelatex')){
  const compiled=await req(`/api/projects/${project.id}/compile`,owner,'POST',{mainFile:'empty.tex',engine:'xelatex',force:true});
  check('filled empty float compiles',compiled.data.ok);

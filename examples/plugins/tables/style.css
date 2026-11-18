@@ -8,3 +8,8 @@
 
 .canvas{min-width:0;overflow:hidden;padding:14px}.view-controls{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:12px}.view-controls button{padding:5px 9px}.view-controls output{min-width:43px;text-align:center;font-variant-numeric:tabular-nums}.view-controls [aria-pressed=true]{background:#e5f3ed;border-color:#4c9d86;color:#14654e}.view-controls small{flex-basis:100%}#table-viewport{position:relative;overflow:auto;max-height:58vh;min-height:90px;scrollbar-gutter:stable;overscroll-behavior:contain;border:1px solid #dce5e8;border-radius:5px;background:white}#table-viewport:focus-visible{outline:2px solid #228e80;outline-offset:2px}#table-stage{position:relative;min-height:50px}#grid{position:absolute;top:0;left:0;width:max-content;transform-origin:0 0}#grid>table{width:auto}#packages{margin-bottom:0}
 #table-stage{overflow:hidden}
+
+#empty-grid-tools { align-items:center; flex-wrap:wrap; }
+#grid-size { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+#grid-size label { flex-direction:row; align-items:center; }
+#excel-paste { flex:1 1 250px; min-width:0; height:32px; resize:none; }
