@@ -43,4 +43,17 @@ test('conference repeated centered p-columns preserve grouped headers and numeri
 test('unsafe commands, overlapping spans and mismatched rows are refused',()=>{for(const s of [String.raw`\begin{tabular}{lc}\multirow{2}{*}{A} & B \\ C & D \\ \end{tabular}`,String.raw`\begin{tabular}{lc} A & \input{x} \\ \end{tabular}`,String.raw`\begin{tabular}{lc} A & B & C \\ \end{tabular}`])assert.throws(()=>parseTable(s));});
 test('new cells reject unbalanced syntax and unescaped delimiters',()=>{for(const s of ['A & B','bad %comment','{missing','$missing',String.raw`\input{x}`,String.raw`a \\ b`])assert.throws(()=>validateCell(s));validateCell(String.raw`\textbf{A \& B} $x_1$`);});
 test('ordinary text escaping preserves special characters without adding columns',()=>{const s=escapeCell('A&B_50% $cost {x}');validateCell(s);assert.equal(s,String.raw`A\&B\_50\% \$cost \{x\}`);});
+test('empty tabular preserves its column spec, comments and closing rule when filled',()=>{
+ const source=String.raw`\begin{tabular}{lc}
+% starter
+\toprule
+\bottomrule
+\end{tabular}`;
+ const model=parseTable(source);
+ assert.equal(replaceTable(model),source);
+ model.rows[0][1].tex='12';
+ const updated=replaceTable(model);
+ assert.ok(updated.indexOf(' & 12')<updated.indexOf('\\bottomrule'));
+ assert.equal(parseTable(updated).rows[0][1].tex,'12');
+});
 console.log(`Table model: ${n}/${n} passed`);

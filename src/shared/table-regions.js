@@ -1,12 +1,12 @@
 import {findTables} from '../plugins/table-model.js';
 
-/** Only the syntactically bounded tabular block is a table-editing region. */
+/** A single-grid float can expose the same edit target from its surrounding lines. */
 export function tableRegions(source){
- return findTables(source).map(t=>({...t,hoverFrom:t.from,hoverTo:t.to}));
+ return findTables(source).map(t=>({...t,hoverFrom:t.float?.from ?? t.from,hoverTo:t.float?.to ?? t.to}));
 }
 
 export function tableAtLine(regions,from,to,position=null){
- if(position!=null)return regions.find(t=>position>=t.from&&position<t.to)||null;
+ if(position!=null)return regions.find(t=>position>=t.hoverFrom&&position<t.hoverTo)||null;
  const candidates=regions.filter(t=>from<t.hoverTo&&to>=t.hoverFrom);return candidates.length===1?candidates[0]:null;
 }
 

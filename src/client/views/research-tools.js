@@ -120,7 +120,7 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
   const localAutoKey = `ls.assistant.auto.${user.id}.${project.id}`;
   let automaticLocal = localStorage.getItem(localAutoKey) !== '0';
   const roleLabel = { owner: '所有者', editor: '编辑者', reviewer: '审阅者', viewer: '只读成员' };
-  const inline=assistantEnabled&&canReview?createInlineReview({view,getPath:getActivePath,editable,onLocate:locate,onAccept:(id)=>decide(id,'accepted'),onReject:(id)=>decide(id,'rejected'),onRequest:({focus:question,range})=>{focus=question;open();run(true,false,false,range);}}):null;
+  const inline=assistantEnabled&&canReview?createInlineReview({view,getPath:getActivePath,editable,onLocate:item=>locate(item,true),onAccept:(id)=>decide(id,'accepted'),onReject:(id)=>decide(id,'rejected'),onRequest:({focus:question,range})=>{focus=question;open();run(true,false,false,range);}}):null;
 
   async function refresh() {
     if (destroyed) return;
@@ -133,7 +133,7 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
     const count = items.filter((item) => item.status === 'pending' && !item.stale).length;
     root.querySelector('#btn-assistant')?.setAttribute('title', `论文助手 · ${count} 条待处理建议`);
   }
-  function open() { opened = true; onOpen?.(); panel.classList.add('open'); paint(); refresh().catch((error) => toast(error.message, 'err')); }
+  function open() { inline?.close(); opened = true; onOpen?.(); panel.classList.add('open'); paint(); refresh().catch((error) => toast(error.message, 'err')); }
   function close() { opened = false; panel.classList.remove('open'); }
   function paint() {
     const shown = items.filter((s) => (filter === 'all' || (filter === 'stale' && s.stale) || (s.status === filter && (filter !== 'pending' || !s.stale))) && (category === 'all' || s.category === category));
@@ -223,7 +223,7 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
     catch (error) { toast(error.message, 'err'); }
     finally { busy = false; paint(); }
   }
-  async function locate(suggestion) {
+  async function locate(suggestion, showInline = false) {
     if (!suggestion) return;
     if (suggestion.pdf) {
       const wrapper = pdfViewer.getPageElement(suggestion.pdf.page);
@@ -243,7 +243,7 @@ export function createResearchTools({ root, project, user, view, pdfViewer, getA
       if(getActivePath()!==suggestion.path)return;const range=suggestionRange(text,suggestion);
       if(!range){toast('没有可靠的原文锚点，请重新检查后定位','err');return;}
       highlightSource(view,range.from,range.to);if(range.approximate)toast('已定位到最接近的原文位置，请核对上下文');
-      view.focus();inline?.show(suggestion);
+      view.focus();if(showInline || !opened)inline?.show(suggestion);
     } catch (error) { toast(error.message, 'err'); }
   }
   async function decide(id, status) {

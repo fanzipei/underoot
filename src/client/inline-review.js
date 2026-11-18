@@ -21,7 +21,9 @@ export function createInlineReview({view,getPath,onAccept,onReject,onRequest,onL
  };
  chip.onclick=()=>{const next=items.find((s)=>s.status==='pending'&&!s.stale&&s.path===getPath());next?onLocate?.(next):request();};
  const key=(event)=>{if(event.altKey&&event.key.toLowerCase()==='k'&&!event.ctrlKey&&!event.metaKey){event.preventDefault();request();}else if(popup&&event.key==='Escape'){event.preventDefault();event.stopPropagation();close();view.focus();}else if(popup&&current&&editable&&event.altKey&&event.key==='Enter'){event.preventDefault();const item=current;close();onAccept(item.id);}};
+ const dismissOnEditorPress = event => { if (event.button === 0) close(); };
+ view.dom.addEventListener('pointerdown',dismissOnEditorPress);
  view.scrollDOM.addEventListener('scroll',place);
  document.addEventListener('keydown',key,true);
- return{show,close,request,setItems(values){items=values;const count=items.filter((s)=>s.status==='pending'&&!s.stale&&s.path===getPath()).length;chip.textContent=count?`${count} 条就地建议 · Alt+K`:'AI 段落编辑 · Alt+K';},status(text){chip.title=text;},destroy(){view.scrollDOM.removeEventListener('scroll',place);close();chip.remove();document.removeEventListener('keydown',key,true);}};
+ return{show,close,request,setItems(values){items=values;const count=items.filter((s)=>s.status==='pending'&&!s.stale&&s.path===getPath()).length;chip.textContent=count?`${count} 条就地建议 · Alt+K`:'AI 段落编辑 · Alt+K';},status(text){chip.title=text;},destroy(){view.dom.removeEventListener('pointerdown',dismissOnEditorPress);view.scrollDOM.removeEventListener('scroll',place);close();chip.remove();document.removeEventListener('keydown',key,true);}};
 }

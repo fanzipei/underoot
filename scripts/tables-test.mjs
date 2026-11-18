@@ -22,7 +22,7 @@ Baseline & 0.80 & 10 \\
 Conclusion remains unchanged.
 \end{document}`;
 check('bundled table editor is registered with minimum document permissions',(await req('/api/extensions',owner)).data.extensions.some(e=>e.id==='underoot.tables'&&e.enabled&&e.permissions.length===3));
-const asset=await fetch(BASE+'/extensions/underoot.tables/1.4.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
+const asset=await fetch(BASE+'/extensions/underoot.tables/1.5.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
 check('table editor cannot invoke an undeclared model capability',(await rpc('ai.complete',{instruction:'no'})).status===403);
 await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:source});
 const doc=(await rpc('documents.read',{path:'main.tex'})).data.result,m=parseTable(doc.content);m.rows[1][1].tex='$0.93 \\pm 0.01$';const content=replaceTable(m);
@@ -76,6 +76,21 @@ const cf=(await readScoped({path:'complex.tex',from:complexFile.indexOf(complex)
 const complexSave=await rpc('documents.table.write',{...cf,before:cf.content,content:replaceTable(cm)},{consent:true});
 check('complex table content-only save preserves wrappers and nested layout',complexSave.status===200&&complexSave.data.result.content===complex.replace('Group','New group').replace('0.93','0.94'));
 if((await req('/api/system/engines',owner)).data.engines.some(e=>e.id==='xelatex')){const compiled=await req(`/api/projects/${project.id}/compile`,owner,'POST',{mainFile:'complex.tex',engine:'xelatex',force:true});if(!compiled.data.ok)console.error(compiled.data.errors);check('edited multirow, custom column and nested table compile to real PDF',compiled.data.ok);}
+const emptyFloat = String.raw`\begin{table*}[t]\centering\caption{First results}\label{tab:empty}\end{table*}`;
+const emptyFile = '\\documentclass[twocolumn]{article}\n\\begin{document}\nIntro.\n'+emptyFloat+'\nOutro.\n\\end{document}';
+await req(`/api/projects/${project.id}/file?path=empty.tex`,owner,'PUT',{content:emptyFile});
+const emptyAt = emptyFile.indexOf(emptyFloat);
+const empty = (await readScoped({path:'empty.tex',from:emptyAt,to:emptyAt+emptyFloat.length,source:emptyFloat})).data.result;
+const emptyModel = parseTable(empty.content);
+check('empty table* opens with a draft row and leaves untouched source intact',replaceTable(emptyModel)===emptyFloat&&emptyModel.rows[0].length===2);
+emptyModel.rows[0][0].tex='Baseline';
+const filled = replaceTable(emptyModel);
+const filledResult = await rpc('documents.table.write',{...empty,before:empty.content,content:filled},{consent:true});
+check('first cell edit creates a grid while preserving float, caption and surrounding prose',filledResult.status===200&&filled.includes('Baseline')&&(await rpc('documents.read',{path:'empty.tex'})).data.result.content===emptyFile.replace(emptyFloat,filled));
+if((await req('/api/system/engines',owner)).data.engines.some(e=>e.id==='xelatex')){
+ const compiled=await req(`/api/projects/${project.id}/compile`,owner,'POST',{mainFile:'empty.tex',engine:'xelatex',force:true});
+ check('filled empty float compiles',compiled.data.ok);
+}
 const zipResponse=await fetch(BASE+'/api/extensions/examples/tables/download',{headers:{cookie:owner}}),bytes=Buffer.from(await zipResponse.arrayBuffer()),pack=inspectExtensionZip(bytes);check('portable ZIP passes the installation validator',pack.manifest.id==='research.tables'&&new AdmZip(bytes).getEntry('plugin.js'));
 const email=`table-viewer-${Date.now()}@test.local`;await req('/api/auth/register','','POST',{email,name:'Table viewer',password:'TableFixturePass42!'});const users=(await req('/api/admin/users',admin)).data.users,u=users.find(u=>u.email===email);await req('/api/admin/users/'+u.id+'/review',admin,'POST',{status:'active'});const viewer=(await req('/api/auth/login','','POST',{email,password:'TableFixturePass42!'})).cookie;await req(`/api/projects/${project.id}/members`,owner,'POST',{email,role:'viewer'});
 check('viewer can read a table but cannot save it',(await rpc('documents.read',{path:'main.tex'},{},viewer)).status===200&&(await rpc('documents.write',{path:'main.tex',content,hash:saved.hash},{consent:true},viewer)).status===403);

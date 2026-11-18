@@ -11,7 +11,12 @@ let conversions = 0;
 
 function tableBlock(content){
  if(typeof content!=='string'||!content.length||Buffer.byteLength(content)>150000)throw failure(400,'表格片段需为非空 TeX，限 150 KB');
- const tables=findTables(content);if(tables.length!==1||content.slice(0,tables[0].from).trim()||content.slice(tables[0].to).trim())throw failure(400,'只能编辑一个完整的 tabular / tabularx 表格片段');
+ const [table, extra] = findTables(content);
+ const from = table?.float?.from ?? table?.from;
+ const to = table?.float?.to ?? table?.to;
+ const standalone = table && (!content.slice(0,table.from).trim() && !content.slice(table.to).trim());
+ const wrapped = table?.float && !content.slice(0,from).trim() && !content.slice(to).trim();
+ if (!table || extra || !(standalone || wrapped)) throw failure(400,'只能编辑一个完整的 TeX 表格片段');
  return content;
 }
 function tableFile(project,rel){
