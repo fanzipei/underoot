@@ -1,4 +1,4 @@
-import {excelCells, configureEmptyGrid} from './table-starter.js';
+import {excelCells, configureEmptyGrid, pasteTableCells} from './table-starter.js';
 import {tableViewport} from './table-viewport.js';
 import {selectedTableIndex} from '../shared/table-regions.js';
 import katex from 'katex';
@@ -10,7 +10,7 @@ const mark=()=>{dirty=true;status('有未保存修改 · 保存前会检查文�
 function previewText(host,value,level=0){
  // Approximate familiar TeX styling without executing arbitrary TeX or HTML.
  if(level<2&&/^\s*\\begin\{tabular/.test(value)){try{const nested=parseTable(value),t=document.createElement('table');t.className='nested-preview';for(const row of nested.rows){const tr=document.createElement('tr');for(const c of row){if(c.covered)continue;const td=document.createElement('td');td.colSpan=c.span;td.rowSpan=Math.max(1,c.rowSpan);previewText(td,c.tex,level+1);tr.append(td);}t.append(tr);}host.append(t);return;}catch{}}
- value=value.replace(/\s+/g,' ').replace(/\\(?:makecell|shortstack)(?:\[[^\]]*\])?\{([\s\S]*)\}/g,(_,v)=>v.replace(/\\\\(?:\[[^\]]*\])?/g,'\n')).replace(/\\(?:small|footnotesize|scriptsize|tiny|normalsize)\b/g,'').replace(/~|\\(?:quad|qquad|enspace|hfill)\b/g,' ').replace(/\\,/g,'\u2009');
+ value=value.replace(/\s+/g,' ').replace(/\\(?:makecell|shortstack)(?:\[[^\]]*\])?\{([\s\S]*)\}/g,(_,v)=>v.replace(/\\\\(?:\[[^\]]*\])?/g,'\n')).replace(/\\(?:small|footnotesize|scriptsize|tiny|normalsize|relax)\b/g,'').replace(/~|\\(?:quad|qquad|enspace|hfill)\b/g,' ').replace(/\\,/g,'\u2009');
  const parts=value.split(/(\$[^$]+\$|\\\([\s\S]*?\\\)|\\(?:textbf|textit|emph|underline)\{[^{}]*\})/g);
  for(const p of parts){if(/^\$|^\\\(/.test(p)){const node=document.createElement('span');try{katex.render(p.startsWith('$')?p.slice(1,-1):p.slice(2,-2),node,{throwOnError:false,trust:false,maxExpand:200,strict:'ignore'});}catch{node.textContent=p;}host.append(node);}else{const format=/^\\(textbf|textit|emph|underline)\{([\s\S]*)\}$/.exec(p),node=document.createElement(format?{textbf:'strong',textit:'em',emph:'em',underline:'u'}[format[1]]:'span');node.textContent=(format?format[2]:p).replace(/(?<!\\)[{}]/g,'').replace(/\\([&%_#$])/g,'$1');host.append(node);}}
 }
@@ -22,10 +22,11 @@ function originalBorders(td,cell,r){
 function current(){return model?.rows[selected[0]]?.[selected[1]];}
 function controls(){
  const setup = model?.emptyRowAt != null && writable;
- $('empty-grid-tools').hidden = !setup;
+ $('excel-tools').hidden = !model || !writable;
+ $('grid-size').hidden = !setup;
  for (const id of ['starter-rows', 'starter-cols', 'apply-grid-size']) $(id).disabled = busy || !setup;
  $('starter-cols').disabled ||= !!model?.custom;
- $('excel-paste').disabled = busy || !setup;
+ $('excel-paste').disabled = busy || !model || !writable;
 for(const id of ['files','tables','open'])$(id).disabled=busy;
  if(regionMode){$('files').closest('label').hidden=true;$('tables').closest('label').hidden=true;$('new').hidden=true;}const off=!model||!writable||busy;for(const id of ['save','cell','plain','parse','new','bold','add-row','remove-row','add-col','remove-col','merge','split'])$(id).disabled=id==='new'?(!doc||!writable||busy):off;for(const id of ['style','stretch','padding','align'])$(id).disabled=off||model.custom;for(const id of ['bold','parse','add-row','remove-row','add-col','remove-col','merge','split'])$(id).disabled=off||model.custom;$('parse').disabled ||= !!model?.emptyFloat || (regionMode && !!model?.float);$('source').readOnly=!model||!writable||busy||model.custom||$('parse').disabled;}
 function regionSource() {
@@ -36,8 +37,11 @@ function sourcePreview(){if(!model)return;try{$('source').value=regionSource();r
 function paint(){
  if (model?.emptyRowAt != null) { $('starter-rows').value = model.rows.length; $('starter-cols').value = model.cols.length; }
  $('grid').replaceChildren();if(!model){controls();preview.refresh();return;}const table=document.createElement('table');table.className=model.style+(model.custom?' original-layout':'');table.style.lineHeight=String(model.stretch*1.4);
- model.rows.forEach((row,r)=>{const tr=document.createElement('tr');let col=0;row.forEach((cell,c)=>{if(cell.covered){col+=cell.span;return;}const td=document.createElement('td');td.tabIndex=0;td.colSpan=cell.span;td.rowSpan=Math.max(1,cell.rowSpan||1);td.dataset.row=r;td.dataset.cell=c;originalBorders(td,cell,r);td.style.paddingLeft=td.style.paddingRight=model.padding*1.33+'px';const alignment=(cell.align||(model.custom?model.columnAlignments?.[col]:null)||model.cols[col]||'l').replace(/\|/g,'');td.style.textAlign=alignment==='r'?'right':alignment==='c'?'center':'left';previewText(td,cell.tex);td.classList.toggle('selected',selected[0]===r&&selected[1]===c);td.setAttribute('aria-label',`第 ${r+1} 行第 ${col+1} 列：${cell.tex}`);td.onclick=()=>select(r,c);td.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(r,c);$('cell').focus();}};tr.append(td);col+=cell.span;});table.append(tr);});$('grid').append(table);preview.refresh();
- $('style').value=model.style;$('stretch').value=model.stretch;$('padding').value=model.padding;const cell=current();$('cell').value=cell?.tex||'';$('cell-label').textContent=`第 ${selected[0]+1} 行 · 单元格 ${selected[1]+1}`;const col=model.rows[selected[0]].slice(0,selected[1]).reduce((n,c)=>n+c.span,0),align=(cell?.align||model.cols[col]||'l').replace(/\|/g,'');$('align').value=['l','c','r'].includes(align)?align:'l';controls();sourcePreview();
+ model.rows.forEach((row,r)=>{const tr=document.createElement('tr');let col=0;row.forEach((cell,c)=>{if(cell.covered){col+=cell.span;return;}const td=document.createElement('td');td.tabIndex=0;td.colSpan=cell.span;td.rowSpan=Math.max(1,cell.rowSpan||1);td.dataset.row=r;td.dataset.cell=c;originalBorders(td,cell,r);td.style.paddingLeft=td.style.paddingRight=model.padding*1.33+'px';const alignment=(cell.align||(model.custom?model.columnAlignments?.[col]:null)||model.cols[col]||'l').replace(/\|/g,'');td.style.textAlign=alignment==='r'?'right':alignment==='c'?'center':'left';previewText(td,cell.tex);td.classList.toggle('selected',selected[0]===r&&selected[1]===c);td.setAttribute('aria-label',`第 ${r+1} 行第 ${col+1} 列：${cell.tex}`);td.onclick=()=>{select(r,c);focusGridCell();};td.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(r,c);$('cell').focus();}};tr.append(td);col+=cell.span;});table.append(tr);});$('grid').append(table);preview.refresh();
+ $('style').value=model.style;$('stretch').value=model.stretch;$('padding').value=model.padding;const cell=current();$('cell').value=cell?.tex||'';$('cell-label').textContent=`第 ${selected[0]+1} 行 · 单元格 ${selected[1]+1}`;const col=model.rows[selected[0]].slice(0,selected[1]).reduce((n,c)=>n+c.span,0),align=(cell?.align||model.cols[col]||'l').replace(/\|/g,'');$('align').value=['l','c','r'].includes(align)?align:'l';$('excel-target').textContent = model.emptyRowAt != null ? '从左上角填充空表' : `从第 ${selected[0]+1} 行第 ${col+1} 列开始`;controls();sourcePreview();
+}
+function focusGridCell(){
+ $('grid').querySelector(`[data-row="${selected[0]}"][data-cell="${selected[1]}"]`)?.focus({preventScroll:true});
 }
 function select(r,c){if(rawChanged){status('请先点击“从这份 TeX 更新网格”，避免丢失源码草稿',true);return;}selected=[r,c];paint();}
 function setModel(t){preview.reset();model=parseTable(doc.content,t);selected=[0,0];dirty=false;newTable=false;paint();status(model.custom?'已载入。此表含自定义列/规则/注释，仅允许编辑单元格，保留原格式。':'已载入 · 点击单元格编辑，公式和 TeX 宏保持可编辑');}
@@ -60,20 +64,31 @@ $('apply-grid-size').onclick = () =>
 $('grid-size').onkeydown = event => {
  if (event.key === 'Enter' && event.target.matches('input')) $('apply-grid-size').click();
 };
-function pasteIntoEmptyGrid(event) {
- if (!event.clipboardData || !writable || busy || model?.emptyRowAt == null) return;
+function pasteIntoGrid(event) {
+ if (!event.clipboardData || !writable || busy || !model) return;
+ const gridCell = event.target.closest('td[data-row][data-cell]');
  event.preventDefault();
  run(() => {
   const cells = excelCells(event.clipboardData.getData('text/plain'));
   const columns = Math.max(...cells.map(row => row.length));
-  const freshFloat = model.emptyFloat && !dirty;
-  initializeGrid(freshFloat ? cells.length : Math.max(model.rows.length, cells.length),
-    freshFloat ? columns : Math.max(model.cols.length, columns), cells);
-  status(`已填入 ${cells.length} 行 × ${columns} 列，确认后保存回 TeX`);
+  if (rawChanged) throw Error('请先从 TeX 更新网格');
+  if (model.emptyRowAt != null) {
+   const freshFloat = model.emptyFloat && !dirty;
+   initializeGrid(freshFloat ? cells.length : Math.max(model.rows.length, cells.length),
+     freshFloat ? columns : Math.max(model.cols.length, columns), cells);
+  } else {
+   const target = gridCell ? [Number(gridCell.dataset.row), Number(gridCell.dataset.cell)] : selected;
+   model = pasteTableCells(model, target, cells);
+   selected = target;
+   mark();
+   paint();
+  }
+  if (gridCell) focusGridCell();
+  status(`已粘贴 ${cells.length} 行 × ${columns} 列，确认后保存回 TeX`);
  });
 }
-$('excel-paste').onpaste = pasteIntoEmptyGrid;
-$('grid').onpaste = pasteIntoEmptyGrid;
+$('excel-paste').onpaste = pasteIntoGrid;
+$('grid').onpaste = pasteIntoGrid;
 $('files').onchange=()=>run(async()=>{const path=$('files').value;$('files').value=doc?.path;noDraft();await open(path);$('files').value=path;});
 $('open').onclick=()=>run(async()=>{if(regionMode)loadRegion(await api.documents.readTable());else await open($('files').value);});
 $('tables').onchange=()=>run(async()=>{noDraft();refreshTables(Number($('tables').value));});

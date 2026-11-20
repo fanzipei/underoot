@@ -1,4 +1,4 @@
-import { escapeCell, serializeTable } from './table-model.js';
+import { escapeCell, replaceFormattedCell, serializeTable } from './table-model.js';
 
 // Excel exports TSV with quotes around cells containing tabs or line breaks.
 export function excelCells(text) {
@@ -57,6 +57,55 @@ export function configureEmptyGrid(model, rowCount, colCount, values = []) {
   );
   const next = { ...model, cols, rows, emptyGridEdited: true,
     structural: model.structural || colCount !== model.cols.length };
+  if (new TextEncoder().encode(serializeTable(next)).length > 150000) {
+    throw Error('生成的表格超过 150 KB，请减少数据量');
+  }
+  return next;
+}
+
+export function pasteTableCells(model, [startRow, startIndex], values) {
+  const start = model.rows[startRow]?.[startIndex];
+  if (!start) throw Error('请先选中要粘贴到的单元格');
+  const startCol = model.rows[startRow].slice(0, startIndex).reduce((col, cell) => col + cell.span, 0);
+  const columns = Math.max(...values.map(row => row.length));
+  if (startRow + values.length > model.rows.length || startCol + columns > model.cols.length) {
+    throw Error('粘贴区域超出表格范围，请调整起始位置或先增删行列');
+  }
+
+  const single = values.length === 1 && columns === 1;
+  const upwardSpans = new Set();
+  model.rows.forEach((row, r) => {
+    let col = 0;
+    for (const cell of row) {
+      for (let above = Math.max(0, r + cell.rowSpan + 1); above < r; above++) {
+        for (let c = col; c < col + cell.span; c++) upwardSpans.add(above * model.cols.length + c);
+      }
+      col += cell.span;
+    }
+  });
+  const rows = model.rows.slice();
+  for (const [offset, valuesRow] of values.entries()) {
+    const row = rows[startRow + offset] = model.rows[startRow + offset].slice();
+    const byColumn = new Map();
+    let col = 0;
+    for (const [index, cell] of row.entries()) {
+      byColumn.set(col, index);
+      col += cell.span;
+    }
+    for (const [columnOffset, value] of valuesRow.entries()) {
+      const index = byColumn.get(startCol + columnOffset);
+      const cell = row[index];
+      if (!cell || cell.covered || upwardSpans.has((startRow + offset) * model.cols.length + startCol + columnOffset) ||
+          (!single && (cell.span > 1 || Math.abs(cell.rowSpan) > 1))) {
+        throw Error('粘贴区域碰到合并单元格，请避开该区域或单独粘贴到合并单元格');
+      }
+      // A one-column row may omit its final row terminator. Keep a blank entry
+      // explicit so clearing its value cannot remove the row during parsing.
+      const text = excelTextToTex(value) || (model.cols.length === 1 && cell.tex ? '\\relax' : '');
+      row[index] = { ...cell, tex: replaceFormattedCell(cell.tex, text) };
+    }
+  }
+  const next = { ...model, rows };
   if (new TextEncoder().encode(serializeTable(next)).length > 150000) {
     throw Error('生成的表格超过 150 KB，请减少数据量');
   }

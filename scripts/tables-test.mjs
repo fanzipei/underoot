@@ -1,4 +1,4 @@
-import {excelCells, configureEmptyGrid} from '../src/plugins/table-starter.js';
+import {excelCells, configureEmptyGrid, pasteTableCells} from '../src/plugins/table-starter.js';
 import assert from 'node:assert/strict';
 import AdmZip from 'adm-zip';
 import {inspectExtensionZip} from '../server/extension-packages.js';
@@ -23,7 +23,7 @@ Baseline & 0.80 & 10 \\
 Conclusion remains unchanged.
 \end{document}`;
 check('bundled table editor is registered with minimum document permissions',(await req('/api/extensions',owner)).data.extensions.some(e=>e.id==='underoot.tables'&&e.enabled&&e.permissions.length===3));
-const asset=await fetch(BASE+'/extensions/underoot.tables/1.6.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
+const asset=await fetch(BASE+'/extensions/underoot.tables/1.7.0/index.html');check('iframe is sandbox-compatible with direct networking disabled',asset.ok&&asset.headers.get('content-security-policy').includes("connect-src 'none'"));
 check('table editor cannot invoke an undeclared model capability',(await rpc('ai.complete',{instruction:'no'})).status===403);
 await req(`/api/projects/${project.id}/file?path=main.tex`,owner,'PUT',{content:source});
 const doc=(await rpc('documents.read',{path:'main.tex'})).data.result,m=parseTable(doc.content);m.rows[1][1].tex='$0.93 \\pm 0.01$';const content=replaceTable(m);
@@ -77,6 +77,18 @@ const cf=(await readScoped({path:'complex.tex',from:complexFile.indexOf(complex)
 const complexSave=await rpc('documents.table.write',{...cf,before:cf.content,content:replaceTable(cm)},{consent:true});
 check('complex table content-only save preserves wrappers and nested layout',complexSave.status===200&&complexSave.data.result.content===complex.replace('Group','New group').replace('0.93','0.94'));
 if((await req('/api/system/engines',owner)).data.engines.some(e=>e.id==='xelatex')){const compiled=await req(`/api/projects/${project.id}/compile`,owner,'POST',{mainFile:'complex.tex',engine:'xelatex',force:true});if(!compiled.data.ok)console.error(compiled.data.errors);check('edited multirow, custom column and nested table compile to real PDF',compiled.data.ok);}
+const savedComplex = complexSave.data.result;
+const pastedComplex = replaceTable(pasteTableCells(parseTable(savedComplex.content), [1,1],
+ excelCells('New score\tNew cost\r\n14%\tR&D')));
+const pastedSave = await rpc('documents.table.write',{...savedComplex,before:savedComplex.content,content:pastedComplex},{consent:true});
+const expectedComplex = complex.replace('Group','New group').replace('Score & Cost','New score & New cost')
+ .replace(String.raw`$0.93\pm0.01$ & \begin{tabular}{c}10\\12\end{tabular}`, String.raw`14\% & R\&D`);
+check('Excel paste overwrites only the rectangle and keeps the custom grid and surrounding TeX',
+ pastedSave.status===200&&(await rpc('documents.read',{path:'complex.tex'})).data.result.content===complexFile.replace(complex,expectedComplex));
+if((await req('/api/system/engines',owner)).data.engines.some(e=>e.id==='xelatex')){
+ const compiled=await req(`/api/projects/${project.id}/compile`,owner,'POST',{mainFile:'complex.tex',engine:'xelatex',force:true});
+ check('Excel paste into an existing complex table compiles',compiled.data.ok);
+}
 const emptyFloat = String.raw`\begin{table*}[t]\centering\caption{First results}\label{tab:empty}\end{table*}`;
 const emptyFile = '\\documentclass[twocolumn]{article}\n\\begin{document}\nIntro.\n'+emptyFloat+'\nOutro.\n\\end{document}';
 await req(`/api/projects/${project.id}/file?path=empty.tex`,owner,'PUT',{content:emptyFile});

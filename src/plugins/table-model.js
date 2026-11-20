@@ -118,6 +118,28 @@ export function parseTable(source,table=findTables(source)[0]){
  return{...table,fullSource:source,header:source.slice(table.begin,spec.from),rows,cols,columnAlignments:cols.alignments,rules,spec:source.slice(spec.from+1,spec.to-1),width,bodyStart:start,bodyEnd:end,emptyRowAt,custom,style:/\\toprule\b/.test(body)?'booktabs':/\\hline\b/.test(body)?'grid':'plain',stretch:Number(stretch?.[1]||1),padding:Number(padding?.[1]||6),structural:false};
 }
 export function escapeCell(text){return String(text).replace(/[\\{}$&#_%~^]/g,c=>({'\\':'\\textbackslash{}','{':'\\{','}':'\\}','$':'\\$','&':'\\&','#':'\\#','_':'\\_','%':'\\%','~':'\\textasciitilde{}','^':'\\textasciicircum{}'}[c]));}
+
+// Retain explicit formatting that applies to the entire cell. Layout wrappers
+// such as multicolumn, multirow and cellcolor are already outside cell.tex.
+export function replaceFormattedCell(tex, value) {
+ const command = /^\s*\\(textbf|textmd|textit|textsl|textsc|textsf|textrm|texttt|textup|emph|underline|uline|sout|textcolor|colorbox)\b/;
+ let from = 0, to = tex.length;
+ for (;;) {
+  const match = command.exec(tex.slice(from, to));
+  if (!match) break;
+  let at = from + match[0].length;
+  if (match[1] === 'textcolor' || match[1] === 'colorbox') {
+   if (tex.slice(at, to).trimStart().startsWith('[')) at = group(tex, at, '[', ']').to;
+   at = group(tex, at).to;
+  }
+  if (!tex.slice(at, to).trimStart().startsWith('{')) break;
+  const argument = group(tex, at);
+  if (argument.to > to || tex.slice(argument.to, to).trim()) break;
+  from = argument.from + 1;
+  to = argument.to - 1;
+ }
+ return tex.slice(0, from) + value + tex.slice(to);
+}
 export function validateCell(s){
  if(s.length>10000||/(?<!\\)%|\\(?:input|include|write|openout|read|catcode|verb)\b/.test(s))throw Error('单元格请勿插入注释、外部文件或执行指令');let depth=0,math=false,envs=[];
  for(let i=0;i<s.length;i++){if(s[i]==='\\'){const env=/^\\(begin|end)\{([^{}]+)\}/.exec(s.slice(i));if(env){if(!safeEnvs.has(env[2]))throw Error('此嵌套环境暂不支持');if(env[1]==='begin')envs.push(env[2]);else if(envs.pop()!==env[2])throw Error('单元格环境未闭合');i+=env[0].length-1;continue;}if(s[i+1]==='\\'&&!depth&&!envs.length)throw Error('单元格内换行请用 \\makecell{...}');i++;continue;}if(s[i]==='{')depth++;if(s[i]==='}'&&--depth<0)throw Error('单元格花括号未闭合');if(s[i]==='$')math=!math;if(s[i]==='&'&&!depth&&!math&&!envs.length)throw Error('请将单元格中的 & 写为 \\&');}if(depth||math||envs.length)throw Error('单元格花括号、公式或环境未闭合');

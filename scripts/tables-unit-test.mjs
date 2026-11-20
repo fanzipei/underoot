@@ -1,4 +1,4 @@
-import {excelCells, configureEmptyGrid} from '../src/plugins/table-starter.js';
+import {excelCells, configureEmptyGrid, pasteTableCells} from '../src/plugins/table-starter.js';
 import assert from 'node:assert/strict';
 import {findTables,parseTable,serializeTable,replaceTable,escapeCell,validateCell} from '../src/plugins/table-model.js';
 let n=0;const test=(name,fn)=>{fn();n++;console.log('✓ '+name);};
@@ -78,5 +78,33 @@ test('empty-grid sizing keeps pending data and does not replace custom column de
  ]);
  assert.throws(()=>configureEmptyGrid(draft,1,2),/移除已填写/);
  assert.throws(()=>configureEmptyGrid(draft,2,2,[['replacement']]),/已有内容/);
+});
+test('Excel paste uses logical columns and retains TeX outside the replaced values',()=>{
+ const source=String.raw`\begin{tabular}{lccc}
+\multicolumn{2}{c}{Group} & \textbf{\underline{Old}} & \textcolor[rgb]{1,0,0}{Clear me} \\
+Keep & 21 & 22 & 23 \\
+\end{tabular}`;
+ const model=parseTable(source);
+ const updated=replaceTable(pasteTableCells(model,[0,1],excelCells('R&D\t\r\n10%\t13')));
+ assert.equal(updated,source.replace('Old',String.raw`R\&D`).replace('Clear me','')
+  .replace('22 & 23',String.raw`10\% & 13`));
+ assert.equal(replaceTable(model),source);
+ assert.throws(()=>pasteTableCells(model,[0,0],excelCells('x\ty')),/合并单元格/);
+ assert.throws(()=>pasteTableCells(model,[1,3],excelCells('x\ty')),/超出表格/);
+});
+test('Excel paste rejects covered positions in both directions of a cross-row span',()=>{
+ for(const span of ['2','-2']){
+  const source=String.raw`\begin{tabular}{lc}`+'\n'+(span==='2'?
+    String.raw`\multirow{2}{*}{Name} & A \\ & B \\`:
+    String.raw` & A \\ \multirow{-2}{*}{Name} & B \\`)+String.raw`\end{tabular}`;
+  const model=parseTable(source);
+  assert.throws(()=>pasteTableCells(model,[span==='2'?1:0,0],[['Covered']]),/合并单元格/);
+  assert.equal(replaceTable(pasteTableCells(model,[span==='2'?0:1,0],[['New']])),source.replace('Name','New'));
+ }
+});
+test('clearing a final one-column cell keeps its row',()=>{
+ const model=parseTable(String.raw`\begin{tabular}{l}A \\ B\end{tabular}`);
+ const output=replaceTable(pasteTableCells(model,[1,0],[['']]));
+ assert.equal(parseTable(output).rows.length,2);
 });
 console.log(`Table model: ${n}/${n} passed`);
